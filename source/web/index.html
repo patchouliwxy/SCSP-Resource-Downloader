@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCSP · 资源下载器</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="SCSP首页"><div>SCSP<span>资源下载器</span></div></a>
+  <div class="nav-caption">工作空间</div>
+  <nav aria-label="主导航"><button class="nav-button active" data-view="library">资源库</button><button class="nav-button" data-view="motions">动作库<b id="motion-nav-count">—</b></button><button class="nav-button" data-view="scenes">场景库<b id="scene-nav-count">—</b></button><button class="nav-button" data-view="audios">音频库<b id="audio-nav-count">—</b></button><button class="nav-button" data-view="songs">歌曲动作<b id="song-nav-count">—</b></button><button class="nav-button" data-view="jobs">下载任务<b id="job-nav-count">0</b></button></nav>
+  <a class="nav-button" href="/wardrobe" style="text-decoration:none">角色换装</a>
+  <div class="nav-caption category-heading">资源分类</div><nav id="categories" aria-label="资源分类"></nav>
+  <div class="sidebar-bottom"><span class="status-light"></span> 本地工作空间 <small>下载保存在这台电脑</small><button id="source-button">索引来源与覆盖范围 ↗</button></div>
+</aside>
+<div class="workspace">
+ <header class="topbar"><span>工作空间 <i>/</i> <strong id="breadcrumb">资源库</strong></span><div class="topbar-right"><span class="version-pill" id="snapshot-pill">加载索引中</span></div></header>
+ <main>
+  <section class="intro"><div><h1 id="page-title">资源库</h1></div><button class="quiet-button" id="refresh-button">↻ 刷新</button></section>
+  <section class="stats" aria-label="索引概览"><div class="stat"><div><span>已命名资源</span><strong id="named-count">—</strong></div><small>可搜索与选择</small></div><div class="stat"><div><span>歌曲动作数据</span><strong id="song-count">—</strong></div><small>按已识别文件族统计</small></div><div class="stat"><div><span>未映射文件</span><strong id="unmapped-count">—</strong></div><small>暂无法按名称浏览</small></div></section>
+  <div class="coverage"><p id="coverage-note">读取本地索引，不会自动下载全量资源。</p><button id="coverage-source">查看来源</button></div>
+  <div class="content-layout">
+   <section class="browser-panel">
+    <div class="tools" id="resource-tools"><label class="search-box"><span>⌕</span><input id="search" aria-label="搜索资源" placeholder="搜索资源名、歌曲代码或包内地址…"><kbd>/</kbd></label><div class="filters"><select id="category-filter" aria-label="按资源分类筛选"><option value="">所有资源分类</option></select><select id="character" aria-label="按角色编号筛选"><option value="">所有角色编号</option></select><select id="type" aria-label="按文件类型筛选"><option value="">所有文件类型</option></select><select id="sort" aria-label="排序"><option value="name">名称排序</option><option value="size">体积从大到小</option></select></div></div>
+    <div class="quick-search" id="quick-search"><span>快速查找</span><button data-search="m_head_10">角色 10 头部</button><button data-search="m_dress_2196">服装 2196</button><button data-search="002_yumeas">002_yumeas</button></div>
+    <div class="result-heading"><div><h2 id="result-title">全部资源</h2><span id="result-count">加载中…</span></div><span id="result-hint">选择资源后可查看依赖计划</span></div>
+    <div id="job-cleanup-tools" class="job-cleanup-tools" hidden><span id="job-storage-summary"></span><button id="clear-finished-jobs" class="quiet-button">清理已结束任务</button></div>
+    <div id="audio-role-tools" class="job-cleanup-tools" hidden><span id="audio-role-status"></span><button id="audio-role-toggle" class="quiet-button">建立角色索引</button></div>
+    <div id="results" class="resource-grid" aria-live="polite"></div>
+    <div id="pagination" class="pagination"><button id="prev-page" aria-label="上一页">← 上一页</button><span id="page-label">—</span><button id="next-page" aria-label="下一页">下一页 →</button></div>
+   </section>
+   <aside class="basket-panel"><div class="basket-title"><h2>下载清单</h2><span id="basket-count">0</span></div><div id="basket-items"></div><button class="text-button" id="clear-basket">清空选择</button><div class="basket-bottom"><div class="basket-summary"><span>直接选择</span><strong id="selection-count">0 项</strong></div><button id="plan-button" class="primary-button" disabled>查看下载计划 <span>→</span></button><small>递归依赖将自动加入计划。<br>模型包仅含 FBX 与贴图；动作中的 AnimationClip 独立导出 .anim；场景可选 Unity 工程或单个 FBX；脚本、动态演出与 Shader 需另行适配。</small></div></aside>
+  </div>
+ </main><footer>SCSP 资源下载器</footer>
+</div>
+<dialog id="plan-dialog"><div class="dialog-heading"><div><div class="eyebrow">DOWNLOAD PLAN</div><h2>确认下载计划</h2></div><button class="icon-button" data-close="plan-dialog" aria-label="关闭下载计划">✕</button></div><div id="plan-body"></div><div class="download-options"><label id="scene-export-options" hidden>场景导出格式 <select id="scene-export-format"><option value="unity">Unity 工程（场景及资源）</option><option value="fbx">单个 FBX（模型与贴图）</option></select></label><label>下载体积上限 <span><input id="download-limit" type="number" min="1" max="4096" value="256"> MiB</span></label><label class="checkbox-option"><input id="allow-unresolved" type="checkbox">允许带缺项下载，并保留缺项报告</label></div><p class="dialog-error" id="download-error" role="alert"></p><div class="dialog-actions"><button class="quiet-button" data-close="plan-dialog">继续选择</button><button class="primary-button" id="download-button">开始下载 ↓</button></div></dialog>
+<dialog id="source-dialog"><div class="dialog-heading"><h2>索引来源与覆盖范围</h2><button class="icon-button" data-close="source-dialog" aria-label="关闭来源说明">✕</button></div><div id="source-body"></div></dialog>
+<dialog id="detail-dialog"><div class="dialog-heading"><h2>资源详情</h2><button class="icon-button" data-close="detail-dialog" aria-label="关闭详情">✕</button></div><div id="detail-body"></div></dialog>
+<div id="toast" class="toast" role="status"></div>
+<dialog id="job-cleanup-dialog"><div class="dialog-heading"><h2>清理下载任务</h2><button class="icon-button" data-close="job-cleanup-dialog" aria-label="关闭任务清理">✕</button></div><p id="job-cleanup-summary"></p><label class="checkbox-option"><input id="delete-task-files" type="checkbox" checked>同时删除下载文件，释放硬盘空间</label><p id="job-cleanup-note" class="source-note"></p><p id="job-cleanup-error" class="dialog-error" role="alert"></p><div class="dialog-actions"><button class="quiet-button" data-close="job-cleanup-dialog">取消</button><button id="confirm-job-cleanup" class="danger-button">删除任务及文件</button></div></dialog>
+<div id="mobile-selection" class="mobile-selection" hidden><span id="mobile-selection-count"></span><button class="primary-button" id="mobile-plan-button">查看下载计划 →</button></div>
+<dialog id="model-preview-dialog"><div class="dialog-heading"><div><div class="eyebrow">MODEL PREVIEW</div><h2 id="model-preview-name">模型部件预览</h2></div><button class="icon-button" data-close="model-preview-dialog" aria-label="关闭模型预览">✕</button></div><div id="model-preview-canvas"></div><div class="preview-controls"><span>拖动旋转 · 滚轮缩放 · 右键平移</span><button id="reset-preview" class="quiet-button">复位视角</button></div><p id="model-preview-status" role="status"></p><p class="source-note">静态部件与基础贴图预览；游戏Shader、物理和完整角色组合未还原。按需取得依赖，关闭后删除临时预览文件；原始下载缓存保留。</p></dialog>
+<dialog id="audio-listen-dialog"><div class="dialog-heading"><h2 id="audio-listen-name">音乐试听</h2><button class="icon-button" data-close="audio-listen-dialog" aria-label="关闭音乐试听">✕</button></div><p id="audio-listen-status" role="status"></p><label class="listen-label">角色<select id="listen-character" aria-label="试听角色"><option value="">所有角色</option></select></label><label class="listen-label">音轨<select id="listen-track" aria-label="试听音轨" disabled></select></label><audio id="listen-player" controls preload="metadata"></audio><p class="source-note">显示游戏原始音轨名称，不自动判断main/cross的具体用途。关闭后删除临时试听文件，原始下载缓存保留。</p></dialog>
+<dialog id="motion-preview-dialog"><div class="dialog-heading"><div><h2 id="motion-preview-name">动作预览</h2></div><button class="icon-button" data-close="motion-preview-dialog" aria-label="关闭动作预览">✕</button></div><div id="motion-preview-canvas"></div><div class="motion-controls"><button id="motion-toggle" class="quiet-button" disabled>播放</button><input id="motion-seek" type="range" min="0" max="1" value="0" step="0.01" aria-label="动作进度" disabled><span id="motion-time">0.00 / — 秒</span><select id="motion-speed" aria-label="动作速度"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><label><input id="motion-loop" type="checkbox" checked> 循环</label><button id="motion-reset" class="quiet-button">复位视角</button></div><p id="motion-preview-status" role="status"></p><p class="source-note">默认模型：園田 智代子。Humanoid 身体姿态预览，使用基础材质；表情、布料物理、歌曲独立走位和足部 IK 未还原。关闭后清理临时动作帧，保留共用模型与原始资源缓存。</p></dialog>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+<script src="/app.js"></script>
+</body></html>

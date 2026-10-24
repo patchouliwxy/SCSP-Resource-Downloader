@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCSP · 角色换装</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/wardrobe.css"></head>
+<body><aside class="sidebar">
+<a class="brand" href="/" aria-label="SCSP首页"><div>SCSP<span>资源下载器</span></div></a>
+<div class="nav-caption">工作空间</div>
+<nav aria-label="主导航"><a class="nav-button" href="/">资源库</a><a class="nav-button" href="/#motions">动作库</a><a class="nav-button" href="/#scenes">场景库</a><a class="nav-button" href="/#songs">歌曲动作</a><a class="nav-button" href="/#jobs">下载任务</a><a class="nav-button active" href="/wardrobe" aria-current="page">角色换装</a></nav>
+<div class="nav-caption category-heading">换装分类</div><div class="tabs" role="tablist" aria-label="换装分类"><button data-group="dress" role="tab" aria-selected="true">服装</button><button data-group="hair" role="tab" aria-selected="false">发型</button><button data-group="accessory" role="tab" aria-selected="false">饰品</button><button data-group="set" role="tab" aria-selected="false">套装</button></div>
+<div class="sidebar-bottom"><span class="status-light"></span> 本地工作空间 <small>下载保存在这台电脑</small></div></aside>
+<div class="app-shell"><header class="topbar"><span>工作空间 <i>/</i> <strong>角色换装</strong></span><span id="version"></span></header>
+<main><section class="intro"><div><h1>角色换装</h1></div><div class="character-field"><label for="idol">角色</label><select id="idol" aria-label="选择角色"></select></div></section>
+<div class="wardrobe-workspace"><aside class="outfit"><div class="outfit-top"><span>当前搭配</span><button id="clear" class="text-button">清空</button></div><div id="portrait" class="empty"></div><h2 id="outfit-title">尚未选择部件</h2><div id="chosen"></div><button id="add" class="primary" disabled>加入下载清单 →</button><p class="quiet-note">下载包只含 FBX 和配套贴图。缩略图显示游戏中的搭配；3D 按单个部件预览。</p><details><summary>关联范围</summary><p>服装、套装来自官方主表。发型按资源样式号匹配；颜色或固定饰品变体需核对模型选项。妆容、左眼、右眼按外观 prefab 的实际依赖关联材质与贴图，以原尺寸 PNG 下载；在 Unity 中仍需配置对应材质。</p></details></aside>
+<section class="closet"><div class="toolbar"><input id="query" placeholder="搜索名称或编号" aria-label="搜索换装"><select id="subtype" aria-label="饰品种类" hidden></select><span id="count"></span></div><p id="status" role="status"></p><div id="grid" class="grid"></div><div class="pager"><button id="previous" disabled>← 上一页</button><span id="page"></span><button id="next">下一页 →</button></div></section></div></main></div>
+<dialog id="preview"><div class="dialog-title"><h2 id="preview-title">部件预览</h2><button id="close-preview" aria-label="关闭部件预览">✕</button></div><div id="canvas"></div><p id="preview-status"></p><p>拖动旋转 · 滚轮缩放；关闭后清理临时预览文件。</p></dialog><div id="toast" role="status"></div>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/"}}</script><script type="module" src="/wardrobe.js"></script></body></html>

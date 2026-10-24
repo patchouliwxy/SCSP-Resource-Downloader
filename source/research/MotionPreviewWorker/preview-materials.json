@@ -1,0 +1,117 @@
+{
+  "M_Acce_22196_10OCDL_10": {
+    "name": "M_Acce_22196_10OCDL_10",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "17377758f7209b24.png"
+  },
+  "holeEye": {
+    "name": "holeEye",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "3a3b1f91a56309bc.png"
+  },
+  "M_eyebrow": {
+    "name": "M_eyebrow",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "38b2668755c626b7.png"
+  },
+  "M_eyelash": {
+    "name": "M_eyelash",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "38b2668755c626b7.png"
+  },
+  "M_eye_L": {
+    "name": "M_eye_L",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "5c14c4e4cf508e95.png",
+    "eye": true,
+    "highlight": "5c1a4b9155c0f0d5.png",
+    "offset": [
+      -0.027987273,
+      0.0
+    ],
+    "highlightOffset": [
+      -0.027987273,
+      0.0
+    ]
+  },
+  "M_mouthline": {
+    "name": "M_mouthline",
+    "color": 1511450,
+    "alphaTest": 0
+  },
+  "M_eye_R": {
+    "name": "M_eye_R",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "5c14c4e4cf508e95.png",
+    "eye": true,
+    "highlight": "5c1a4b9155c0f0d5.png",
+    "offset": [
+      -0.019755896,
+      0.0
+    ],
+    "highlightOffset": [
+      -0.019755896,
+      0.0
+    ]
+  },
+  "M_teeth_tongue": {
+    "name": "M_teeth_tongue",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "c7fc6ff7284f791e.png"
+  },
+  "M_face": {
+    "name": "M_face",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "2a69aff0232f1279.png"
+  },
+  "M_faceline": {
+    "name": "M_faceline",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "38b2668755c626b7.png"
+  },
+  "M_Acce_02196_10OCDL_10_01_zbias": {
+    "name": "M_Acce_02196_10OCDL_10_01_zbias",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "17377758f7209b24.png"
+  },
+  "M_Acce_02196_10OCDL_10_02": {
+    "name": "M_Acce_02196_10OCDL_10_02",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "17377758f7209b24.png"
+  },
+  "M_hair_2196": {
+    "name": "M_hair_2196",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "6de6eec494564aa0.png"
+  },
+  "M_2196_10OCDL_dress_00_01": {
+    "name": "M_2196_10OCDL_dress_00_01",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "28d85d6680ca47bc.png"
+  },
+  "M_2196_10OCDL_dress_00_02": {
+    "name": "M_2196_10OCDL_dress_00_02",
+    "color": 16777215,
+    "alphaTest": 0.3,
+    "texture": "35b4dad858aa36ec.png"
+  },
+  "M_2196_10OCDL_skin_00": {
+    "name": "M_2196_10OCDL_skin_00",
+    "color": 16777215,
+    "alphaTest": 0,
+    "texture": "71bae99bbc1825e4.png"
+  }
+}
