@@ -14,7 +14,7 @@ The open-source license covers only code that this project is entitled to licens
 
 ## Features
 
-- **Models:** export FBX files and textures into folders organized by asset number.
+- **Models:** export FBX files and textures into folders organized by asset number. Outfits and hairstyles include their explicitly linked headwear, also available as a separate accessory category.
 - **Motions:** export standalone `.anim` files, with Humanoid motion previews.
 - **Scenes:** export a Unity project or one FBX per scene, with available textures.
 - **Audio:** previews, track selection, WAV conversion, and character indexing for story audio Cues.

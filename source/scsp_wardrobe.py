@@ -5,8 +5,9 @@ import threading
 from collections import Counter
 
 import scsp_download as core
+from wardrobe_headwear import attach_headwear
 
-CATEGORY_LABELS = {'glasses':'眼镜','earring':'耳饰','makeup':'妆容','eye_l':'左眼 / 瞳孔','eye_r':'右眼 / 瞳孔','teeth':'牙饰','other':'其他饰品'}
+CATEGORY_LABELS = {'headwear':'头饰','glasses':'眼镜','earring':'耳饰','makeup':'妆容','eye_l':'左眼 / 瞳孔','eye_r':'右眼 / 瞳孔','teeth':'牙饰','other':'其他饰品'}
 
 
 class Wardrobe:
@@ -15,6 +16,8 @@ class Wardrobe:
         self.data = json.loads(Path(path).read_text(encoding='utf-8')) if Path(path).is_file() else {}
         if (self.data.get('game_version'), self.data.get('resource_version')) != (catalog.data['game_version'], catalog.data['resource_version']):
             self.data = {}
+        if self.data:
+            self.data = attach_headwear(self.data, getattr(catalog, 'entries', []))
         self.records = self.data.get('records', [])
         self.by_key = {(r['group'], r['id']): r for r in self.records}
 
@@ -30,7 +33,7 @@ class Wardrobe:
         rows = self.data.get('sets', []) if group == 'set' else [r for r in self.records if r['group']==group]
         rows = [r for r in rows if r['character']==character and (not category or r.get('subtype')==category)
                 and query.casefold() in (str(r['id'])+' '+r.get('name','')+' '+ ' '.join(m['name'] for m in r.get('models',[]))).casefold()]
-        rows = sorted(rows, key=lambda r:r['id'], reverse=True)
+        rows = sorted(rows, key=lambda r:(r.get('resource',0) if r.get('subtype')=='headwear' else int(r['id'])), reverse=True)
         result=[]
         for row in rows[(max(page,1)-1)*24:max(page,1)*24]:
             if group == 'set':

@@ -7,6 +7,7 @@ from collections import defaultdict
 
 import scsp_download as core
 from appearance_resources import appearance_textures
+from wardrobe_headwear import attach_headwear
 
 from runtime_paths import app_root
 ROOT = app_root()
@@ -185,11 +186,11 @@ def build(index, texts, master):
                             'parts': [dict(group=g, id=i) for g, i in parts]})
     for row in records:
         row['icon_hash'] = icon_hashes.get(row['icon'], '')
-    return dict(game_version=index['game_version'], resource_version=index['resource_version'],
+    return attach_headwear(dict(game_version=index['game_version'], resource_version=index['resource_version'],
                 source='official MasterData wardrobe tables + localization + product icons',
                 schema=1, records=records, sets=result_sets,
                 counts=dict(dresses=len(dresses), hairs=len(hairs), accessories=len(accessories), sets=len(sets)),
-                note='No account ownership inferred. Missing model/thumbnail bindings remain visible.')
+                note='No account ownership inferred. Missing model/thumbnail bindings remain visible.'), entries)
 
 
 if __name__ == '__main__':
