@@ -55,7 +55,7 @@ def export_animations(sample, output=None, progress=lambda text: None):
             sources.append({"resource": entries[item["file"]]["name"], "bundle": item["output"],
                             "path_id": obj.path_id, "name": tree["m_Name"],
                             "sample_rate": tree["m_SampleRate"], "stop_time": muscle.get("m_StopTime"),
-                            "bindings": len(tree.get("m_ClipBindingConstant", {}).get("genericBindings", []))})
+                            "bindings": len(tree.get("m_ClipBindingConstant", {}).get("genericBindings", [])), "humanoid_bindings": sum(b.get("typeID")==95 for b in tree.get("m_ClipBindingConstant",{}).get("genericBindings",[]))})
         del env
     if missing_clips:
         raise RuntimeError("所选动作未找到内部AnimationClip，尚不支持此布局：" + ", ".join(missing_clips))
@@ -102,11 +102,30 @@ def export_animations(sample, output=None, progress=lambda text: None):
             target = output / name
             if target.exists():
                 raise ValueError("不覆盖已有动画：" + str(target))
-            shutil.copy2(source, target)
+            shutil.move(source, target)
             if source.with_suffix(source.suffix + ".meta").exists():
                 shutil.copy2(source.with_suffix(source.suffix + ".meta"), target.with_suffix(".anim.meta"))
             report["clips"].append({"file": target.relative_to(sample).as_posix() if target.is_relative_to(sample) else str(target),
                                     "bytes": target.stat().st_size, "sha256": digest(target)})
+        if manifest.get('convert_generic_humanoid'):
+            from generic_motion import lip_data
+            from scsp_motion_preview import retarget
+            report['warnings']=[]
+            for item in list(report['clips']):
+                original=sample/item['file']
+                source=next((s for s in sources if s['name'].casefold()==original.stem.casefold()),None)
+                if not source or source.get('humanoid_bindings'):continue
+                resource=next((e for e in manifest['entries'] if e['name']==source['resource']),None)
+                if not resource or resource['id'] not in manifest['selected_ids'] or not (resource['type']=='anim' or resource['name'].endswith('_body.asset')):
+                    item['kind']='auxiliary';continue
+                try:
+                    if lip_data(original):item['kind']='lip';continue
+                    folder=sample/'animation-convert-work'/original.stem;folder.mkdir(parents=True,exist_ok=True)
+                    result=retarget(original,folder)
+                    if result.get('kind')=='generic_humanoid':
+                        converted=output/(original.stem+'_humanoid.anim');shutil.copy2(folder/'converted.anim',converted)
+                        report['clips'].append(dict(file=converted.relative_to(sample).as_posix(),bytes=converted.stat().st_size,sha256=digest(converted),kind='converted_humanoid',source_file=item['file']))
+                except ValueError as error:report['warnings'].append(original.name+'：'+str(error))
         (output / "export-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         return report
     finally:

@@ -8,7 +8,8 @@ using UnityEngine;
 
 [Serializable] public class RigNode {public string name;public int parent;public float[] position,rotation,scale;}
 [Serializable] public class RigGroup {public int start,count,material;}
-[Serializable] public class RigMesh {public string name;public int node;public float[] positions,normals,uv,weights,bindPoses;public int[] indices,joints,bones;public RigGroup[] groups;public string[] materialNames;}
+[Serializable] public class RigMorph {public string name;public float[] positions;}
+[Serializable] public class RigMesh {public string name;public int node;public float[] positions,normals,uv,weights,bindPoses;public int[] indices,joints,bones;public RigGroup[] groups;public string[] materialNames;public RigMorph[] morphs;}
 [Serializable] public class RigModel {public int schema=1;public string id="chiyoko-preview-v1",name="園田 智代子";public bool humanoid;public float humanScale;public RigNode[] nodes;public RigMesh[] meshes;public string[] muscles;}
 public static class BuildPoseWorker {
  static float[] V(Vector3 v){return new[]{v.x,v.y,v.z};}
@@ -23,7 +24,8 @@ public static class BuildPoseWorker {
   model.meshes=actor.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r=>r.sharedMesh&&r.gameObject.activeInHierarchy).Select(r=>{
    var m=r.sharedMesh;var weights=m.boneWeights;
    int cursor=0;var groups=Enumerable.Range(0,m.subMeshCount).Select(i=>{var g=new RigGroup{start=cursor,count=m.GetTriangles(i).Length,material=i};cursor+=g.count;return g;}).ToArray();
-   return new RigMesh{name=r.name,node=Array.IndexOf(ts,r.transform),positions=m.vertices.SelectMany(V).ToArray(),normals=m.normals.SelectMany(V).ToArray(),uv=m.uv.SelectMany(v=>new[]{v.x,v.y}).ToArray(),indices=m.triangles,groups=groups,materialNames=r.sharedMaterials.Select(mat=>mat?mat.name:"").ToArray(),
+   var morphs=Enumerable.Range(0,m.blendShapeCount).Where(i=>new[]{"A","I","U","E","O","eye_L_close","eye_R_close","eye_L_smile","eye_R_smile"}.Contains(m.GetBlendShapeName(i))).Select(i=>{var dp=new Vector3[m.vertexCount];var dn=new Vector3[m.vertexCount];var dt=new Vector3[m.vertexCount];int frame=m.GetBlendShapeFrameCount(i)-1;m.GetBlendShapeFrameVertices(i,frame,dp,dn,dt);float weight=m.GetBlendShapeFrameWeight(i,frame);return new RigMorph{name=m.GetBlendShapeName(i),positions=dp.SelectMany(v=>V(v*(weight==0?1:100f/weight))).ToArray()};}).ToArray();
+   return new RigMesh{morphs=morphs,name=r.name,node=Array.IndexOf(ts,r.transform),positions=m.vertices.SelectMany(V).ToArray(),normals=m.normals.SelectMany(V).ToArray(),uv=m.uv.SelectMany(v=>new[]{v.x,v.y}).ToArray(),indices=m.triangles,groups=groups,materialNames=r.sharedMaterials.Select(mat=>mat?mat.name:"").ToArray(),
     weights=weights.SelectMany(w=>new[]{w.weight0,w.weight1,w.weight2,w.weight3}).ToArray(),joints=weights.SelectMany(w=>new[]{w.boneIndex0,w.boneIndex1,w.boneIndex2,w.boneIndex3}).ToArray(),
     bones=r.bones.Select(t=>Array.IndexOf(ts,t)).ToArray(),bindPoses=m.bindposes.SelectMany(b=>Enumerable.Range(0,16).Select(i=>b[i])).ToArray()};
   }).ToArray();

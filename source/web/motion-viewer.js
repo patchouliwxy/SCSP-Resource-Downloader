@@ -10,7 +10,7 @@ export function createMotionViewer(container,metadataUrl,framesUrl,onTime=()=>{}
  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
  const ground=new THREE.GridHelper(6,30,0xb7c3d5,0xd6dee9);scene.add(ground);
  let disposed=false,model=null,nodes=[],metadata=null,frames=null,time=0,playing=true,speed=1,loop=true,last=performance.now();
- let cameraReady=false;
+ let cameraReady=false;const morphMeshes=[];
  const tmpQ=new THREE.Quaternion(),nextQ=new THREE.Quaternion();
  function reset(){if(!model)return;model.updateMatrixWorld(true);const box=new THREE.Box3(),point=new THREE.Vector3();
   // Measure the deformed vertices, not the imported mesh's cached bind-pose box.
@@ -27,10 +27,16 @@ export function createMotionViewer(container,metadataUrl,framesUrl,onTime=()=>{}
    bone.position.set(-(frames[left]*(1-u)+frames[right]*u),frames[left+1]*(1-u)+frames[right+1]*u,frames[left+2]*(1-u)+frames[right+2]*u);
    tmpQ.set(frames[left+3],-frames[left+4],-frames[left+5],frames[left+6]);nextQ.set(frames[right+3],-frames[right+4],-frames[right+5],frames[right+6]);bone.quaternion.copy(tmpQ.slerp(nextQ,u));
   }
+  if(metadata.kind==='lip'){
+   const left=metadata.vowels[a],right=metadata.vowels[b];
+   for(const mesh of morphMeshes)for(const [name,index] of Object.entries(mesh.morphTargetDictionary||{})){
+    if('AIUEO'.includes(name)&&name.length===1)mesh.morphTargetInfluences[index]=(left[name.toLowerCase()]||0)*(1-u)+(right[name.toLowerCase()]||0)*u;
+   }
+  }
   model.updateMatrixWorld(true);onTime(time,metadata.duration,playing);
  }
  function disposeObject(root){const textures=new Set();root.traverse(o=>{o.geometry?.dispose();for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){if(m.map)textures.add(m.map);if(m.userData.eyeHighlight)textures.add(m.userData.eyeHighlight);m.dispose();}});textures.forEach(t=>t.dispose());}
- const ready=Promise.all([fetch('/api/motion-model?v=textured2').then(r=>{if(!r.ok)throw new Error('预览模型读取失败');return r.json();}),fetch(metadataUrl).then(r=>{if(!r.ok)throw new Error('动作信息读取失败');return r.json();}),fetch(framesUrl).then(r=>{if(!r.ok)throw new Error('动作帧读取失败');return r.arrayBuffer();})]).then(async ([rig,meta,buffer])=>{
+ const ready=Promise.all([fetch('/api/motion-model?v=expressions3').then(r=>{if(!r.ok)throw new Error('预览模型读取失败');return r.json();}),fetch(metadataUrl).then(r=>{if(!r.ok)throw new Error('动作信息读取失败');return r.json();}),fetch(framesUrl).then(r=>{if(!r.ok)throw new Error('动作帧读取失败');return r.arrayBuffer();})]).then(async ([rig,meta,buffer])=>{
   if(disposed)return;
   if(!rig.humanoid||rig.id!==meta.model)throw new Error('预览模型与动作骨架版本不一致');
   if(buffer.byteLength!==meta.frameCount*meta.boneCount*28)throw new Error('动作帧数据不完整');
@@ -46,6 +52,10 @@ export function createMotionViewer(container,metadataUrl,framesUrl,onTime=()=>{}
    if(normals.length===positions.length)geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3));else geometry.computeVertexNormals();
    if(source.uv)geometry.setAttribute('uv',new THREE.Float32BufferAttribute(source.uv,2));
    geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(source.joints,4));geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(source.weights,4));
+   if(source.morphs?.length){
+    geometry.morphTargetsRelative=true;
+    geometry.morphAttributes.position=source.morphs.map(shape=>{const values=new Float32Array(shape.positions);for(let i=0;i<values.length;i+=3)values[i]*=-1;const attribute=new THREE.BufferAttribute(values,3);attribute.name=shape.name;return attribute;});
+   }
    const materials=(source.materials||[{color:0xb7c5db}]).map(info=>{
     const material=new THREE.MeshBasicMaterial({color:info.color,side:THREE.DoubleSide,alphaTest:info.alphaTest||0});
     if(info.texture)textureLoads.push(loader.loadAsync('/api/motion-textures/'+info.texture).then(map=>{map.colorSpace=THREE.SRGBColorSpace;map.wrapS=map.wrapT=THREE.ClampToEdgeWrapping;map.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());if(info.offset)map.offset.fromArray(info.offset);material.map=map;material.needsUpdate=true;}));
@@ -60,12 +70,12 @@ export function createMotionViewer(container,metadataUrl,framesUrl,onTime=()=>{}
     return material;
    });
    for(const group of source.groups||[])geometry.addGroup(group.start,group.count,group.material);
-   const mesh=new THREE.SkinnedMesh(geometry,materials.length===1?materials[0]:materials);mesh.name=source.name;mesh.frustumCulled=false;nodes[source.node].add(mesh);model.updateMatrixWorld(true);
+   const mesh=new THREE.SkinnedMesh(geometry,materials.length===1?materials[0]:materials);mesh.name=source.name;mesh.frustumCulled=false;if(source.morphs?.length){mesh.updateMorphTargets();morphMeshes.push(mesh);}nodes[source.node].add(mesh);model.updateMatrixWorld(true);
    const inverses=source.bones.map((_,i)=>new THREE.Matrix4().fromArray(source.bindPoses,i*16).premultiply(reflection).multiply(reflection));
    // Unity bindposes already include the renderer's bind transform, as glTF IBMs do.
    const skeleton=new THREE.Skeleton(source.bones.map(i=>nodes[i]),inverses);mesh.bind(skeleton,new THREE.Matrix4());mesh.normalizeSkinWeights();
   }
-  scene.add(model);await Promise.all(textureLoads);if(disposed){disposeObject(model);return;}pose();reset();last=performance.now();
+  scene.add(model);await Promise.all(textureLoads);if(disposed){disposeObject(model);return;}pose();reset();if(meta.kind==='lip'){const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3());controls.target.set(0,box.max.y-size.y*.12,0);camera.position.set(0,controls.target.y,size.y*.55);controls.update();}last=performance.now();
   return metadata;
  });
  renderer.setAnimationLoop(()=>{if(disposed)return;const now=performance.now(),dt=Math.min((now-last)/1000,.1);last=now;

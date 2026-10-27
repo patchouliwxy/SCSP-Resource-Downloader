@@ -15,7 +15,8 @@ The open-source license covers only code that this project is entitled to licens
 ## Features
 
 - **Models:** export FBX files and textures into folders organized by asset number. Outfits and hairstyles include their explicitly linked headwear, also available as a separate accessory category.
-- **Motions:** export standalone `.anim` files, with Humanoid motion previews.
+- **Images:** original-resolution previews, transparency inspection, zoom, and PNG saving.
+- **Motions:** standalone `.anim` exports, Humanoid body-motion and story mouth previews, plus optional conversion for generic motions with exact skeleton bindings.
 - **Scenes:** export a Unity project or one FBX per scene, with available textures.
 - **Audio:** previews, track selection, WAV conversion, and character indexing for story audio Cues.
 - **Tasks:** automatic retries, resume, export-only retries, progress by phase, and manual cleanup. Successfully submitting a task clears the submitted selection; failed submissions keep it.
@@ -28,6 +29,10 @@ On Windows x64, download `SCSPDownloader-win64.zip` from this repository's **Rel
 
 Downloads and cache files are stored beside the application in `web-downloads` and `.scsp-cache` by default. Paths are not tied to the developer's computer. Files are saved locally; **Save ZIP** saves an additional copy. The model FBX exporter requires .NET Framework 4.7.2 or a compatible version.
 
+All song companions are kept by default. The ZIP does not include a duplicate copy of every original bundle unless requested. Newly generated intermediate projects and temporary inputs are cleaned up after success; the original cache, delivered files, and old task history remain. Completed tasks whose inputs were cleaned up must be submitted again to export again, reusing the cache where possible. Failed tasks can still be resumed.
+
+To update the downloader, stop the old application and extract the complete new release into a new directory. After verifying it starts, migrate `web-downloads` and `.scsp-cache` if needed. Do not replace only the EXE. If you used a newer resource catalog, run the resource update again in the new release.
+
 ## Updating Game Resources
 
 1. Obtain the complete version line from the game or plugin log
@@ -35,8 +40,6 @@ Downloads and cache files are stored beside the application in `web-downloads` a
 3. Wait for validation and publication to finish, then refresh the page. If the server is not running, start it after the update.
 
 The update rebuilds the resource index, song names, character and default lineup mappings, wardrobe categories, and outfit set associations. If it fails, the previous catalog is retained. The bundled index represents its packaged version; it does not automatically establish the latest official version. Changes to the game's data structures may require an updated downloader.
-
-For the source version, the equivalent command is (replace the placeholder):
 
 ## Running and Building from Source
 
@@ -60,6 +63,27 @@ cd source
 Runtime preparation copies only tools and metadata from the release. It does not copy downloads or fetch the entire game's resources. From `source/`, `prepare_runtime.py` also accepts `--release ../release/SCSPDownloader-win64.zip`. Move any existing `release/SCSPDownloader` folder aside before rebuilding: the build script refuses to overwrite it and its user data. Output is written to `release/SCSPDownloader` and `release/SCSPDownloader-win64.zip`.
 
 `source/` includes the Python and Web code, the scene FBX helper's C# source, and the motion preview Worker's C# source and Unity project configuration. Third-party tools and the precompiled Worker are reused from the release. Rebuilding the Worker requires Unity and a compatible Humanoid preview model; use `build_motion_worker.py --unity <Unity.exe>`. Models and textures are not included in the Git source tree.
+
+## Changelog
+
+### v0.1.2 · 2026-10-27
+
+- Add image previews with checkerboard, white, and dark backgrounds, zoom, original size, and PNG saving. Generated previews are removed when closed.
+- Fix false duplicate-texture errors caused by a Sprite and its source Texture2D sharing a name. Match within the source bundle and prefer the original texture.
+- Keep the selected song position's body motion, root data, expressions, mouth data, camera, and timeline/formation by default. Reduce duplicate intermediate files and improve ZIP compression without reducing animation sampling.
+- Stop treating post-processing profiles as mouth data. Validate automatic candidates against their actual vowel structure, while reporting missing items and skipped candidates.
+- Distinguish story body motions from mouth-only clips. Add mouth previews and JSON export. Generic Transform clips with exact preview-skeleton bindings can produce an additional Humanoid clip; originals are retained and unknown bindings are not guessed.
+- Fix ACB/AWB pairing and missing tracks. Restore sidecar filenames and decode selected preview tracks on demand.
+
+Generic conversion does not guarantee compatibility with every clip. Browser previews do not reproduce the full game performance: separate movement, full expressions, hand/foot IK, shaders, and physics still require adaptation.
+
+### v0.1.1 · 2026-10-25
+
+- Include explicitly linked headwear with outfits and hairstyles, add a separate headwear category, and rebuild associations during resource updates.
+
+### v0.1.0 · 2026-10-24
+
+- Initial public release with resource browsing, model/motion/scene exports, audio previews, and task management.
 
 ## References and Dependencies
 

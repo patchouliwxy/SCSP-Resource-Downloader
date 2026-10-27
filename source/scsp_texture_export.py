@@ -14,21 +14,26 @@ def export_textures(sample):
     entries=[e for e in manifest['entries'] if e['id'] in selected and e['type']=='png']
     if not entries:return []
     outputs={o['file']:o for o in manifest['outputs']}
-    carriers=[]
-    for item in manifest['outputs']:
-        path=core.safe_output(sample,item['output'])
-        if digest(path)!=item['sha256']:raise ValueError('贴图输入哈希不一致')
-        decoded=path.read_bytes()
-        if decoded[:8].startswith((b'UnityFS',b'UnityRaw',b'UnityWeb')):carriers.append(decoded)
-    env=UnityPy.load(*carriers)
-    textures={}
-    for obj in env.objects:
-        if obj.type.name in ('Texture2D','Sprite'):
-            data=obj.read();textures.setdefault(data.m_Name.casefold(),[]).append(data)
     result=[]
     for entry in entries:
+        item=outputs.get(entry['file'])
+        if item is None:raise ValueError('所选贴图缺少下载文件：'+entry['name'])
+        path=core.safe_output(sample,item['output'])
+        if digest(path)!=item['sha256']:raise ValueError('贴图输入哈希不一致')
+        # Resolve inside the selected bundle. Sprite and its source Texture2D
+        # commonly share a name; the full-resolution texture takes priority.
+        env=UnityPy.load(path.read_bytes())
+        textures={'Texture2D':{},'Sprite':{}}
+        for obj in env.objects:
+            if obj.type.name in textures:
+                data=obj.read()
+                textures[obj.type.name].setdefault(data.m_Name.casefold(),[]).append(data)
         name=Path(entry['name']).name
-        candidates=textures.get(name.casefold(),[]) or textures.get(Path(name).stem.casefold(),[])
+        candidates=[]
+        for kind in ('Texture2D','Sprite'):
+            group=textures[kind]
+            candidates=group.get(name.casefold(),[]) or group.get(Path(name).stem.casefold(),[])
+            if candidates:break
         if len(candidates)!=1:raise ValueError('所选贴图不存在或名称不唯一：'+name)
         owner=re.match(r'(\d{2})_(?:eye|face)',name,re.I)
         folder=sample/'models'/('head_'+owner[1] if owner else 'textures')

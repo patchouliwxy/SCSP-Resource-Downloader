@@ -13,7 +13,8 @@ def export_mouth(sample, progress=lambda text: None):
     manifest = json.loads((sample / 'manifest.json').read_text(encoding='utf-8'))
     entries = {e['file']: e for e in manifest['entries']}
     roles = manifest.get('song_selection', {}).get('roles', {})
-    report = dict(files=[], source='original vowel samples', automatic_slot_assignment=False)
+    report = dict(files=[], warnings=[], skipped=[], source='original vowel samples', automatic_slot_assignment=False)
+    required=set(manifest.get('song_selection',{}).get('mouth_required_ids',[]))
     for item in manifest['outputs']:
         entry = entries[item['file']]
         if entry['type'] != 'asset' or (roles.get(entry['id']) != 'mouth_samples' and not re.fullmatch(
@@ -50,7 +51,18 @@ def export_mouth(sample, progress=lambda text: None):
             report['files'].append(dict(file=target.relative_to(sample).as_posix(), resource=entry['name'],
                 frame_rate=rate, frames=len(frames), offset_frame=tree['offsetFrame'], sha256=digest(target)))
         if roles.get(entry['id']) == 'mouth_samples' and not matched:
-            raise ValueError('所选口型资源未找到有效元音数据：' + entry['name'])
+            message='资源没有有效元音口型结构：'+entry['name']
+            if entry['id'] in required: raise ValueError(message)
+            report['skipped'].append(dict(resource=entry['name'],reason=message))
+            report['warnings'].append('已跳过非口型候选：'+entry['name'])
+    from generic_motion import lip_data
+    for clip in sorted((sample/'animations').glob('*.anim')):
+        data=lip_data(clip)
+        if not data:continue
+        target=sample/'mouth'/(clip.stem+'_mouth.json');target.parent.mkdir(exist_ok=True)
+        if target.exists():raise ValueError('不覆盖已有口型JSON：'+str(target))
+        target.write_text(json.dumps(data,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+        report['files'].append(dict(file=target.relative_to(sample).as_posix(),resource=clip.name,frame_rate=data['frameRate'],frames=len(data['datas']),offset_frame=0,sha256=digest(target),source_format=data['source_format']))
     if report['files']:
         (sample / 'mouth/export-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     return report

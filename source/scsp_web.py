@@ -19,6 +19,8 @@ import uuid
 import zipfile
 
 import scsp_download as core
+from audio_companions import with_audio_pairs
+from song_delivery import select_companions, mouth_candidates
 from scsp_anim_export import export_animations
 from scsp_scene_export import export_scenes, has_scene
 from scsp_scene_fbx import export_scene_fbx
@@ -29,6 +31,7 @@ from scsp_audio_export import export_audio
 from scsp_audio_index import AudioIndex
 from scsp_mouth_export import export_mouth
 from scsp_preview import Previews
+from scsp_image_preview import ImagePreviews
 from scsp_listen import Listens
 from scsp_motion_preview import MotionPreviews, supports_motion, MODEL as MOTION_MODEL
 from scsp_wardrobe import Wardrobe, Thumbnails
@@ -59,6 +62,7 @@ class Catalog:
                 formations = characters['formations']
         self.songs = core.discover_songs(self.entries)
         self.song_codes = {song['code'] for song in self.songs}
+        for song in self.songs: song['mouth_candidates'] = mouth_candidates(self.entries,song['code'])
         self.classifications = {e['id']: classify_resource(e, self.song_codes) for e in self.entries}
         self.rows = []
         for e in sorted(self.entries, key=lambda e: e["name"].lower()):
@@ -138,10 +142,13 @@ class Catalog:
         song = None
         if code:
             entries, song = core.select_song(self.entries, code, slots)
+            entries, song = select_companions(entries, song, selection.get("song_options"))
             selected.update({e["id"]: e for e in entries})
+        include_raw = selection.get("include_raw",True)
+        if type(include_raw) is not bool: raise core.DownloadError("保留原始资源选项应为布尔值")
         if not selected:
             raise core.DownloadError("请先选择资源或歌曲")
-        planned, missing = core.resolve_dependencies(self.entries, list(selected.values()))
+        planned, missing = core.resolve_dependencies(self.entries, with_audio_pairs(self.entries, list(selected.values())))
         if song:
             missing = sorted(set(missing + song["missing_companions"]))
         unique = {e["file"]: e for e in planned}
@@ -156,6 +163,10 @@ class Catalog:
         result['scene_export_format'] = scene_format
         result['scene_fbx_only'] = result['scene_export_requested'] and scene_format=='fbx' and all(e['type']=='unity' for e in selected.values())
         result['model_only'] = all(is_model(e) or e['type']=='png' for e in selected.values())
+        result["include_raw"] = include_raw
+        result["cleanup_work"] = not include_raw
+        result["convert_generic_humanoid"] = selection.get("convert_generic_humanoid",False)
+        if type(result["convert_generic_humanoid"]) is not bool: raise core.DownloadError("转换人形选项应为布尔值")
         if song:
             result["song_selection"] = song
         if self.data.get("source_kind") == "public_snapshot":
@@ -352,6 +363,7 @@ class Downloads(JobRecovery):
             model_only = plan.get('model_only', False)
             animation_report=self.stage(job,plan,'animation','导出动作',lambda:({'sources':[],'clips':[]} if model_only or scene_report['scenes'] else export_animations(output,progress=lambda text:self.update(job,current=text))),1)
             plan['animation_export']=animation_report
+            self.update(job,animation_count=len(animation_report['clips']),animation_files=[c['file'] for c in animation_report['clips']])
             def models():
                 report=export_models(output,progress=lambda text:self.update(job,current=text))
                 if model_only:
@@ -363,15 +375,18 @@ class Downloads(JobRecovery):
             self.update(job, model_files=[f['file'] for f in model_report['files']+scene_report['files'] if f['file'].lower().endswith('.fbx')],
                         model_count=sum(len(m['fbxs']) for m in model_report['models']))
             audio_report=self.stage(job,plan,'audio','转换音频',lambda:({'files':[]} if model_only else export_audio(output,progress=lambda text:self.update(job,current=text))),3)
+            self.update(job,animation_count=len(animation_report['clips']),animation_files=[c['file'] for c in animation_report['clips']],audio_count=len(audio_report['files']),audio_files=[a['file'] for a in audio_report['files']])
             plan['audio_export'] = audio_report
+            self.update(job,export_warnings=animation_report.get('warnings',[]))
             mouth_report=self.stage(job,plan,'mouth','导出口型',lambda:({'files':[]} if model_only else export_mouth(output,progress=lambda text:self.update(job,current=text))),4)
             plan['mouth_export'] = mouth_report
+            self.update(job,export_warnings=animation_report.get('warnings',[])+mouth_report.get('warnings',[]))
             self.update(job, mouth_files=[a['file'] for a in mouth_report['files']], mouth_count=len(mouth_report['files']))
             self.update(job, animation_count=len(animation_report["clips"]), animation_files=[c["file"] for c in animation_report["clips"]], audio_files=[a['file'] for a in audio_report['files']], audio_tracks=audio_report['files'], audio_count=len(audio_report['files']), status="packaging", current="正在打包场景工程与原始资源" if scene_report["scenes"] else "正在打包原始资源、FBX、anim与WAV")
             plan["download_complete"] = True
             core.write_json(output / "manifest.json", plan)
             self.package(job,plan,scene_report,animation_report,model_report,audio_report,mouth_report)
-            if model_only:
+            if model_only or not plan.get('include_raw',True):
                 # Only after successful delivery: preserve shared cache and failure evidence.
                 folder, *_ = self.task_paths(job['id'])
                 self.storage_bytes(job['id'])  # Reject links/reparse points before recursive cleanup.
@@ -381,14 +396,14 @@ class Downloads(JobRecovery):
                         shutil.rmtree(path)
                 plan['temporary_inputs_removed'] = True
                 core.write_json(output / 'manifest.json', plan)
-                self.update(job, model_only=True)
+                self.update(job, model_only=model_only)
             self.update(job,status="completed",phase="completed",phase_label="已完成",current="",phase_completed=1,phase_total=1,stored_bytes=None)
         except Exception as exc:
             core.write_json(output / "manifest.json", {**plan, "download_error": str(exc), "download_complete": False})
             self.update(job,status="failed",error=str(exc),current="",stored_bytes=None)
 
 
-def make_handler(catalog, downloads, index_path=None, previews=None, listens=None, motions=None, audio_index=None):
+def make_handler(catalog, downloads, index_path=None, previews=None, listens=None, motions=None, audio_index=None, images=None):
     thumbnails = Thumbnails(catalog, ROOT / 'wardrobe-thumbnails', downloads.cache)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
@@ -414,19 +429,25 @@ def make_handler(catalog, downloads, index_path=None, previews=None, listens=Non
                     return self.file_response(MOTION_MODEL.parent/'textures'/texture_match[1], 'image/png', cache_control='private, max-age=31536000, immutable')
                 if parsed.path == '/api/motion-model' and motions:
                     return self.file_response(MOTION_MODEL, 'application/json', cache_control='private, max-age=86400')
-                motion_match = re.fullmatch(r'/api/motions/([a-f0-9]{24})(/motion\.(json|bin))?', parsed.path)
+                motion_match = re.fullmatch(r'/api/motions/([a-f0-9]{24})(/(motion\.(?:json|bin)|mouth\.json|converted\.anim))?', parsed.path)
                 if motion_match and motions:
                     job = motions.get(motion_match[1])
                     if not motion_match[2]:
                         return self.json_response(job)
                     if job['status'] != 'completed':
                         return self.json_response({'error':'动作预览尚未就绪'},409)
-                    return self.file_response(motions.root/job['key']/('motion.'+motion_match[3]), 'application/json' if motion_match[3]=='json' else 'application/octet-stream', cache_control='no-store')
+                    return self.file_response(motions.root/job['key']/motion_match[3], 'application/json' if motion_match[3].endswith('.json') else 'application/octet-stream', cache_control='no-store')
                 if parsed.path == '/api/audio-index' and audio_index:
                     return self.json_response(audio_index.status())
                 if parsed.path == '/api/audio-index/bank' and audio_index:
                     record = audio_index.bank(params.get('id', ''))
                     return self.json_response(record if record else {'indexed':False, 'message':'此包的Cue索引尚未完成；不会按剧情编号猜角色'})
+                image_match = re.fullmatch(r'/api/images/([a-f0-9]{24})(/image.png)?', parsed.path)
+                if image_match and images:
+                    job=images.get(image_match[1])
+                    if not image_match[2]:return self.json_response(job)
+                    if job['status']!='completed':return self.json_response({'error':'图片尚未就绪'},409)
+                    return self.file_response(images.root/job['key']/'image.png','image/png',cache_control='no-store')
                 if parsed.path == "/api/meta":
                     return self.json_response(catalog.metadata())
                 if parsed.path == '/api/wardrobe/meta':
@@ -460,7 +481,7 @@ def make_handler(catalog, downloads, index_path=None, previews=None, listens=Non
                         track = next((t for t in job.get('tracks', []) if t['track'] == int(audition[3])), None)
                         if job['status'] != 'completed' or not track:
                             return self.json_response({'error': '音轨尚未生成'}, 404)
-                        return self.file_response(core.safe_output(listens.root / audition[1], track['file']), 'audio/wav', ranges=True)
+                        return self.file_response(listens.track_file(audition[1],int(audition[3])) if hasattr(listens,'track_file') else core.safe_output(listens.root / audition[1], track['file']), 'audio/wav', ranges=True)
                     return self.json_response(job)
                 preview = re.fullmatch(r'/api/previews/([a-f0-9]{24})(/model.glb)?', parsed.path)
                 if preview and previews:
@@ -514,6 +535,7 @@ def make_handler(catalog, downloads, index_path=None, previews=None, listens=Non
                          '/wardrobe.css': ('wardrobe.css', 'text/css; charset=utf-8'),
                          '/preview.js': ('preview.js', 'text/javascript; charset=utf-8'),
                          '/motion-viewer.js': ('motion-viewer.js', 'text/javascript; charset=utf-8'),
+                         '/image-preview-ui.js': ('image-preview-ui.js', 'text/javascript; charset=utf-8'),
                          **{'/vendor/' + name: ('vendor/' + name, 'text/javascript; charset=utf-8') for name in
                             ('three.module.js', 'GLTFLoader.js', 'OrbitControls.js', 'BufferGeometryUtils.js')},
                          "/style.css": ("style.css", "text/css; charset=utf-8")}
@@ -602,20 +624,24 @@ def make_handler(catalog, downloads, index_path=None, previews=None, listens=Non
                             listens.catalog = new_catalog
                         if motions:
                             motions.catalog = new_catalog
+                        if images:
+                            images.catalog = new_catalog
                     return self.json_response({'reloaded': True, 'entry_count': len(catalog.entries), 'song_count': len(catalog.songs)})
                 if self.path == "/api/plan":
                     return self.json_response(plan_summary(catalog.plan(body)))
                 if self.path == "/api/download":
                     return self.json_response(downloads.submit(body), 202)
+                if self.path == '/api/image-preview' and images:
+                    return self.json_response(images.start(body.get('id')),202)
                 if self.path == '/api/preview' and previews:
                     return self.json_response(previews.start(body.get('id')), 202)
                 if self.path == '/api/motion-preview' and motions:
                     return self.json_response(motions.start(body.get('id')), 202)
                 if self.path == '/api/listen' and listens:
                     return self.json_response(listens.start(body.get('id')), 202)
-                release = re.fullmatch(r'/api/(previews|listens|motions)/([a-f0-9]{24})/release', self.path)
+                release = re.fullmatch(r'/api/(previews|listens|motions|images)/([a-f0-9]{24})/release', self.path)
                 if release:
-                    manager = {'previews':previews,'listens':listens,'motions':motions}[release[1]]
+                    manager = {'previews':previews,'listens':listens,'motions':motions,'images':images}[release[1]]
                     if manager:
                         return self.json_response(manager.release(release[2]))
                 if self.path == '/api/jobs/clear':
@@ -648,12 +674,14 @@ def main():
     previews = Previews(catalog, ROOT / 'model-previews', ROOT / '.scsp-cache')
     listens = Listens(catalog, ROOT / 'audio-previews', ROOT / '.scsp-cache')
     motions = MotionPreviews(catalog, ROOT / 'motion-previews', ROOT / '.scsp-cache')
+    images = ImagePreviews(catalog, ROOT / 'image-previews', ROOT / '.scsp-cache')
     audio_index = AudioIndex(catalog, ROOT / 'audio-index', ROOT / '.scsp-cache')
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(catalog, downloads, args.index, previews, listens, motions, audio_index))
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(catalog, downloads, args.index, previews, listens, motions, audio_index, images))
     audio_index.start()
     previews.cleanup_stale()
     listens.cleanup_stale()
     motions.cleanup_stale()
+    images.cleanup_stale()
     print(f"SCSP Web 已启动：http://127.0.0.1:{server.server_port}（{len(catalog.entries):,} 个已命名资源）", flush=True)
     try:
         server.serve_forever()
@@ -666,6 +694,7 @@ def main():
         previews.pool.shutdown(wait=True, cancel_futures=True)
         listens.pool.shutdown(wait=True, cancel_futures=True)
         motions.pool.shutdown(wait=True, cancel_futures=True)
+        images.pool.shutdown(wait=True, cancel_futures=True)
 
 
 if __name__ == "__main__":

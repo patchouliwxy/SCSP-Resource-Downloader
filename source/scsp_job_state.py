@@ -12,7 +12,7 @@ import scsp_download as core
 ACTIVE = {'queued','running','canceling','exporting','packaging'}
 STAGES = {
     'scene':('scene-project','scene-fbx','scene-export-work','scene-fbx-work'),
-    'animation':('animations','animation-export-work'),
+    'animation':('animations','animation-export-work','animation-convert-work'),
     'model':('models','model-export-work'),
     'audio':('audio','audio-export-work'),
     'mouth':('mouth',),
@@ -83,6 +83,8 @@ class JobRecovery:
         if job.get('retry_mode')!='export' and self.checkpoint_valid(output,checkpoint):
             self.update(job,reused_stages=job.get('reused_stages',0)+1)
             return checkpoint['report']
+        if checkpoint and not self.checkpoint_valid(output,checkpoint):
+            job['recovery_note']='已保留变化或不完整的旧导出文件'
         self.preserve(job,STAGES[name])
         report=action()
         files=[]
@@ -94,6 +96,10 @@ class JobRecovery:
                     files.append(dict(file=safe.relative_to(output).as_posix(),sha256=sha(safe)))
         checkpoints[name]=dict(report=report,files=files)
         core.write_json(output/'manifest.json',plan)
+        if plan.get('cleanup_work'):
+            self.storage_bytes(job['id'])
+            for folder in STAGES[name]:
+                if 'work' in folder and (output/folder).exists(): shutil.rmtree(output/folder)
         return report
 
     def package(self,job,plan,scene,animation,model,audio,mouth):
@@ -101,7 +107,37 @@ class JobRecovery:
         items=[]
         if not model_only:items.append(('manifest.json','manifest.json'))
         if not model_only and not plan.get('scene_fbx_only'):
-            items.extend((i['output'],i['output']) for i in plan['outputs'])
+            if plan.get('include_raw',True):
+                items.extend((i['output'],i['output']) for i in plan['outputs'])
+            else:
+                entries={e['file']:e for e in plan['entries']}
+                roles=plan.get('song_selection',{}).get('roles',{})
+                selected=set(plan['selected_ids'])
+                mouth_resources={f.get('resource') for f in mouth['files']}
+                for item in plan['outputs']:
+                    entry=entries[item['file']]
+                    if entry['id'] not in selected:continue
+                    role=roles.get(entry['id'])
+                    name=Path(entry['name']).name
+                    if entry['type']=='json':target='data/'+name
+                    elif role=='root':target='root-data/'+Path(name).stem+'.unity3d'
+                    elif role=='timeline':target='timeline/'+Path(name).stem+'.unity3d'
+                    elif role=='mouth_samples' and name in mouth_resources:continue
+                    elif entry['type']=='anim' and animation['clips']:continue
+                    elif entry['name'].endswith('_body.asset') and animation['clips']:continue
+                    elif entry['type'] in ('acb','awb') and audio['files']:continue
+                    elif entry['type']=='unity' and scene['scenes']:continue
+                    elif entry['type']=='prefab' and model['models']:continue
+                    elif entry['type']=='png' and model['files']:continue
+                    else:target='resources/'+entry['id']
+                    # Keep a usable local copy before decoded bundle cleanup.
+                    delivered=core.safe_output(output,target)
+                    delivered.parent.mkdir(parents=True,exist_ok=True)
+                    source=core.safe_output(output,item['output'])
+                    if delivered.exists() and sha(delivered)!=sha(source):
+                        raise ValueError('已有交付数据发生变化，拒绝覆盖：'+target)
+                    if not delivered.exists():shutil.copy2(source,delivered)
+                    items.append((target,target))
         items.extend((i['file'],i['file']) for i in scene['files'])
         items.extend((i['file'],i['file']) for i in animation['clips'])
         if animation['clips']:items.append(('animations/export-report.json','animations/export-report.json'))
@@ -120,7 +156,7 @@ class JobRecovery:
                     phase_total=len(unique),packaged_bytes=0,package_total_bytes=total)
         done=0
         temporary=self.output/(job['id']+'.zip.part')
-        with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as archive:
+        with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
             for n,(name,p) in enumerate(unique.items(),1):
                 archive.write(p,name);done+=p.stat().st_size
                 self.update(job,phase_completed=n,packaged_bytes=done,current=name)

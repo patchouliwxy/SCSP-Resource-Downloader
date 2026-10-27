@@ -9,6 +9,7 @@ import subprocess
 import uuid
 
 import scsp_download as core
+from generic_motion import lip_data,generic_input,save_humanoid
 from scsp_anim_export import export_animations
 from scsp_preview import Previews
 from resource_taxonomy import classify_resource
@@ -88,7 +89,19 @@ def sample_humanoid(path, model, fps=30):
 
 def retarget(anim,folder):
     model=json.loads(MODEL.read_text(encoding='utf-8'))
-    data=sample_humanoid(anim,model)
+    try:
+        data=sample_humanoid(anim,model)
+    except ValueError as error:
+        if '没有可用的 Humanoid' not in str(error):raise
+        lips=lip_data(anim)
+        if lips:
+            target=folder/'motion'
+            meta=dict(schema=1,model=model['id'],kind='lip',name=Path(anim).stem,fps=lips['frameRate'],duration=lips['duration'],frameCount=len(lips['datas']),boneCount=0,nodes=[],vowels=lips['datas'],download_file='mouth.json',binding_basis=lips['binding_basis'])
+            target.with_suffix('.json').write_text(json.dumps(meta),encoding='utf-8');target.with_suffix('.bin').write_bytes(b'')
+            (folder/'mouth.json').write_text(json.dumps(lips),encoding='utf-8')
+            return meta
+        data=generic_input(anim,model)
+    (folder/'_work').mkdir(parents=True,exist_ok=True)
     request=folder/'_work/pose-input.json';request.write_text(json.dumps(data,allow_nan=False,separators=(',',':')),encoding='utf-8')
     target=folder/'motion'
     with (folder/'_work/worker-process.log').open('wb') as log:
@@ -96,6 +109,10 @@ def retarget(anim,folder):
     if result.returncode or not target.with_suffix('.json').is_file():raise RuntimeError('后台Humanoid重定向失败；该片段可能不兼容预览模型')
     meta=json.loads(target.with_suffix('.json').read_text(encoding='utf-8'))
     meta['source_omitted_channels']=data['omittedChannels']
+    if data.get('generic'):
+        baked=json.loads(target.with_suffix('.humanoid.json').read_text(encoding='utf-8'))
+        save_humanoid(folder/'converted.anim',baked)
+        meta.update(kind='generic_humanoid',download_file='converted.anim',converted_from='Transform curves mapped by exact model paths')
     target.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False),encoding='utf-8')
     expected=meta['frameCount']*meta['boneCount']*7*4
     if target.with_suffix('.bin').stat().st_size!=expected:raise RuntimeError('预览骨骼数据尺寸不一致')
