@@ -66,24 +66,29 @@ Runtime preparation copies only tools and metadata from the release. It does not
 
 ## Changelog
 
+### v0.1.3 · 2026-10-29
+
+- Add combined body and root-motion exports.
+- Fix missed root-motion matches, incorrect displacement, and sliding after merging.
+- Fix same-name FBX export conflicts.
+- Fix repackaging after temporary files are cleaned up.
+
+Enable **Apply Root Motion** for merged clips without additional parent movement. Reimport older clips into Unity.
+
 ### v0.1.2 · 2026-10-27
 
-- Add image previews with checkerboard, white, and dark backgrounds, zoom, original size, and PNG saving. Generated previews are removed when closed.
-- Fix false duplicate-texture errors caused by a Sprite and its source Texture2D sharing a name. Match within the source bundle and prefer the original texture.
-- Keep the selected song position's body motion, root data, expressions, mouth data, camera, and timeline/formation by default. Reduce duplicate intermediate files and improve ZIP compression without reducing animation sampling.
-- Stop treating post-processing profiles as mouth data. Validate automatic candidates against their actual vowel structure, while reporting missing items and skipped candidates.
-- Distinguish story body motions from mouth-only clips. Add mouth previews and JSON export. Generic Transform clips with exact preview-skeleton bindings can produce an additional Humanoid clip; originals are retained and unknown bindings are not guessed.
-- Fix ACB/AWB pairing and missing tracks. Restore sidecar filenames and decode selected preview tracks on demand.
-
-Generic conversion does not guarantee compatibility with every clip. Browser previews do not reproduce the full game performance: separate movement, full expressions, hand/foot IK, shaders, and physics still require adaptation.
+- Add image previews and PNG saving.
+- Reduce song download size while keeping required companion data.
+- Improve story mouth previews and Humanoid conversion for supported clips.
+- Fix texture name conflicts, incorrect mouth detection, and missing audio tracks.
 
 ### v0.1.1 · 2026-10-25
 
-- Include explicitly linked headwear with outfits and hairstyles, add a separate headwear category, and rebuild associations during resource updates.
+- Fix missing headwear in outfits and hairstyles; add a headwear category.
 
 ### v0.1.0 · 2026-10-24
 
-- Initial public release with resource browsing, model/motion/scene exports, audio previews, and task management.
+- Initial release with resource browsing, exports, previews, and task management.
 
 ## References and Dependencies
 

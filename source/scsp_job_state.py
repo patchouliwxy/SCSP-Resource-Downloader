@@ -134,7 +134,7 @@ class JobRecovery:
                     delivered=core.safe_output(output,target)
                     delivered.parent.mkdir(parents=True,exist_ok=True)
                     source=core.safe_output(output,item['output'])
-                    if delivered.exists() and sha(delivered)!=sha(source):
+                    if delivered.exists() and sha(delivered)!=(item.get('sha256') or sha(source)):
                         raise ValueError('已有交付数据发生变化，拒绝覆盖：'+target)
                     if not delivered.exists():shutil.copy2(source,delivered)
                     items.append((target,target))

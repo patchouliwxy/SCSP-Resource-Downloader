@@ -38,10 +38,16 @@ def export_models(sample, progress=lambda text: None):
         return report
     if not STUDIO.is_file():
         raise RuntimeError('缺少内置 AssetStudioMod CLI，无法导出 FBX')
+    tool=STUDIO.with_name('SCSPModelFbx.exe')
+    if not tool.is_file():raise RuntimeError('缺少精确 prefab 导出工具，请更新完整本地目录')
+    inputs=[];by_file={}
     for item in manifest['outputs']:
         path = core.safe_output(sample, item['output'])
         if digest(path) != item['sha256']:
             raise ValueError('模型导出输入哈希不一致：' + item['output'])
+        by_file[item['file']]=path
+        with path.open('rb') as stream:
+            if stream.read(8).startswith((b'UnityFS',b'UnityRaw',b'UnityWeb')):inputs.append(path)
     output = sample / 'models'
     if output.exists():
         raise ValueError('不覆盖已有 models 目录，请使用新的下载任务目录')
@@ -56,21 +62,23 @@ def export_models(sample, progress=lambda text: None):
         if target_folder.exists():
             raise ValueError('模型编号重复：' + entry['name'])
         progress('正在导出 FBX 和贴图：' + entry['name'])
+        source=by_file.get(entry['file'])
+        if source not in inputs:raise ValueError('所选 prefab 没有有效源资源包：'+entry['name'])
+        request=work/f'{index:03d}-request.json'
+        core.write_json(request,dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder)))
         with (work / f'{index:03d}.log').open('wb') as log:
-            result = subprocess.run([str(STUDIO), str(sample / 'bundles'), '-m', 'splitObjects',
-                                     '--filter-by-name', '(?i)^' + re.escape(name) + '$',
-                                     '--filter-with-regex', '--fbx-animation', 'skip',
-                                     '--fbx-scale-factor', '1', '--max-export-tasks', '1',
-                                     '-o', str(folder), '--log-level', 'warning'],
-                                    cwd=work, stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=900, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
+                                  timeout=900,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         fbxs = sorted(folder.rglob('*.fbx'))
-        if result.returncode or not fbxs:
+        if result.returncode or len(fbxs)!=1:
             raise RuntimeError(f'{entry["name"]} FBX 导出失败，详见 model-export-work/{index:03d}.log')
         for path in fbxs:
             with path.open('rb') as source:
                 if source.read(23) != b'Kaydara FBX Binary  \x00\x1a\x00':
                     raise RuntimeError('导出的 FBX 头无效：' + path.name)
+        geometry=json.loads((folder/'geometry-report.json').read_text(encoding='utf-8'))
+        if geometry.get('selection')!='source_prefab_root' or geometry.get('meshes',0)<1 or geometry.get('animations')!=0:
+            raise RuntimeError('精确 prefab 导出验证失败：'+entry['name'])
         target_folder.mkdir()
         exported = []
         for path in sorted(folder.rglob('*')):
@@ -84,7 +92,7 @@ def export_models(sample, progress=lambda text: None):
             shutil.copy2(path, target)
             if target.suffix.lower() == '.fbx':
                 exported.append(target)
-        report['models'].append(dict(resource=entry['id'], name=entry['name'],
+        report['models'].append(dict(resource=entry['id'], name=entry['name'],selection='source_prefab_root',geometry=geometry,
                                      fbxs=[p.relative_to(sample).as_posix() for p in exported]))
     report['files'] = [dict(file=p.relative_to(sample).as_posix(), bytes=p.stat().st_size, sha256=digest(p))
                        for p in sorted(output.rglob('*')) if p.is_file()]

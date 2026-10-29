@@ -113,7 +113,7 @@ def export_animations(sample, output=None, progress=lambda text: None):
             report['warnings']=[]
             for item in list(report['clips']):
                 original=sample/item['file']
-                source=next((s for s in sources if s['name'].casefold()==original.stem.casefold()),None)
+                source=next((s for s in sources if s['name'].casefold().removesuffix('.anim')==original.stem.casefold()),None)
                 if not source or source.get('humanoid_bindings'):continue
                 resource=next((e for e in manifest['entries'] if e['name']==source['resource']),None)
                 if not resource or resource['id'] not in manifest['selected_ids'] or not (resource['type']=='anim' or resource['name'].endswith('_body.asset')):
@@ -126,6 +126,8 @@ def export_animations(sample, output=None, progress=lambda text: None):
                         converted=output/(original.stem+'_humanoid.anim');shutil.copy2(folder/'converted.anim',converted)
                         report['clips'].append(dict(file=converted.relative_to(sample).as_posix(),bytes=converted.stat().st_size,sha256=digest(converted),kind='converted_humanoid',source_file=item['file']))
                 except ValueError as error:report['warnings'].append(original.name+'：'+str(error))
+        from scsp_root_merge import export_merged_roots
+        export_merged_roots(sample,manifest,report,output,progress)
         (output / "export-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         return report
     finally:

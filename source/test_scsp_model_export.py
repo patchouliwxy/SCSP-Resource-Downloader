@@ -1,4 +1,5 @@
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,13 +18,16 @@ class ModelExportTests(unittest.TestCase):
         core.write_json(root / 'manifest.json', dict(selected_ids=[entry['id']], entries=[entry],
                         outputs=[dict(output='bundles/test.unity3d', file='test', sha256=hashlib.sha256(b'UnityFS\0test').hexdigest())]))
 
-    def test_selected_name_filter_texture_report_and_no_animation(self):
+    def test_selected_source_texture_report_and_no_animation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp);self.fixture(root)
             def run(args, **kwargs):
-                self.assertIn('(?i)^m_head_14$', args)
-                self.assertEqual(args[args.index('--fbx-animation') + 1], 'skip')
-                folder = Path(args[args.index('-o') + 1]);folder.mkdir()
+                request=json.loads(Path(args[1]).read_text(encoding='utf-8'))
+                self.assertEqual(request['name'],'m_head_14')
+                self.assertTrue(request['prefab_input'].endswith('test.unity3d'))
+                self.assertEqual(len(request['inputs']),1)
+                folder=Path(request['output']);folder.mkdir()
+                (folder/'geometry-report.json').write_text(json.dumps(dict(selection='source_prefab_root',meshes=1,animations=0)))
                 (folder / 'head.fbx').write_bytes(b'Kaydara FBX Binary  \x00\x1a\x00fixture')
                 (folder / 'face.png').write_bytes(b'texture')
                 return SimpleNamespace(returncode=0)
@@ -46,3 +50,15 @@ class ModelExportTests(unittest.TestCase):
             with patch.object(exporter.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
                 with self.assertRaises(RuntimeError):
                     exporter.export_models(root)
+
+    def test_multiple_fbx_results_are_rejected_not_arbitrarily_chosen(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);self.fixture(root)
+            def run(args,**kwargs):
+                request=json.loads(Path(args[1]).read_text(encoding='utf-8'));folder=Path(request['output'])
+                for name in ('prefab','dependency'):
+                    part=folder/name;part.mkdir(parents=True)
+                    (part/'head.fbx').write_bytes(b'Kaydara FBX Binary  '+bytes([0,26,0])+name.encode())
+                return SimpleNamespace(returncode=0)
+            with patch.object(exporter.subprocess,'run',side_effect=run):
+                with self.assertRaises(RuntimeError):exporter.export_models(root)

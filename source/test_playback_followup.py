@@ -124,11 +124,13 @@ class LightPackageTests(unittest.TestCase):
         es=[resource(n) for n in ('110_mellow_camera.json','110_mellow_01_root.asset','mellow.playable')]
         outputs=[]
         for i,e in enumerate(es):
-            (folder/str(i)).write_bytes(b'data');outputs.append(dict(file=e['file'],output=str(i)))
+            (folder/str(i)).write_bytes(b'data');outputs.append(dict(file=e['file'],output=str(i),sha256=hashlib.sha256(b'data').hexdigest()))
         (folder/'manifest.json').write_text('{}')
         plan=dict(model_only=False,include_raw=False,entries=es,selected_ids=[e['id'] for e in es],outputs=outputs,
                   song_selection=dict(roles={es[1]['id']:'root',es[2]['id']:'timeline'}))
         self.manager.jobs['aaaaaaaaaaaa']=dict(id='aaaaaaaaaaaa',status='packaging')
+        self.manager.package(self.manager.jobs['aaaaaaaaaaaa'],plan,dict(files=[],scenes=[]),dict(clips=[]),dict(files=[],models=[]),dict(files=[]),dict(files=[]))
+        for i in range(3):(folder/str(i)).unlink()
         self.manager.package(self.manager.jobs['aaaaaaaaaaaa'],plan,dict(files=[],scenes=[]),dict(clips=[]),dict(files=[],models=[]),dict(files=[]),dict(files=[]))
         with zipfile.ZipFile(self.manager.output/'aaaaaaaaaaaa.zip') as z:
             for name in ('data/110_mellow_camera.json','root-data/110_mellow_01_root.unity3d','timeline/mellow.unity3d'):
