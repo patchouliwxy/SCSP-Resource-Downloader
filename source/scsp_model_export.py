@@ -70,14 +70,32 @@ def export_models(sample, progress=lambda text: None):
             result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
                                   timeout=900,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         fbxs = sorted(folder.rglob('*.fbx'))
-        if result.returncode or len(fbxs)!=1:
+        if result.returncode or len(fbxs)>1 or not (folder/'geometry-report.json').is_file():
             raise RuntimeError(f'{entry["name"]} FBX 导出失败，详见 model-export-work/{index:03d}.log')
+        geometry=json.loads((folder/'geometry-report.json').read_text(encoding='utf-8'))
+        if geometry.get('selection')!='source_prefab_root' or geometry.get('animations')!=0:
+            raise RuntimeError('精确 prefab 导出验证失败：'+entry['name'])
+        if geometry.get('meshes')==0:
+            carrier=re.fullmatch(r'm_acce_(\d+)_[a-z0-9]+_(?:all|make|paint|00|[lr]\d+)_(\d+)\.prefab',Path(entry['name']).name,re.I)
+            if (not carrier or int(carrier[1])<80000 or fbxs or not geometry.get('geometry_checked')
+                    or geometry.get('source_mesh_renderers')!=0 or geometry.get('unresolved_mesh_references')!=[]):
+                raise RuntimeError('无法确认外观资源是否只有贴图：'+entry['name'])
+            dependencies,missing=core.resolve_dependencies(manifest['entries'],[entry])
+            if missing:raise ValueError('外观资源依赖不完整，不能判定为纯贴图：'+entry['name'])
+            texture_ids=[e['id'] for e in dependencies if e['type']=='png']
+            if not texture_ids:raise ValueError('外观资源无网格且没有可导出 PNG：'+entry['name'])
+            from scsp_texture_export import export_textures
+            export_textures(sample,texture_ids)
+            report['models'].append(dict(resource=entry['id'],name=entry['name'],selection='source_prefab_root',
+                                         geometry=geometry,asset_kind='texture',fbxs=[],texture_sources=texture_ids))
+            continue
+        if len(fbxs)!=1:
+            raise RuntimeError('模型导出结果数量不正确：'+entry['name'])
         for path in fbxs:
             with path.open('rb') as source:
                 if source.read(23) != b'Kaydara FBX Binary  \x00\x1a\x00':
                     raise RuntimeError('导出的 FBX 头无效：' + path.name)
-        geometry=json.loads((folder/'geometry-report.json').read_text(encoding='utf-8'))
-        if geometry.get('selection')!='source_prefab_root' or geometry.get('meshes',0)<1 or geometry.get('animations')!=0:
+        if geometry.get('meshes',0)<1:
             raise RuntimeError('精确 prefab 导出验证失败：'+entry['name'])
         target_folder.mkdir()
         exported = []
@@ -92,7 +110,7 @@ def export_models(sample, progress=lambda text: None):
             shutil.copy2(path, target)
             if target.suffix.lower() == '.fbx':
                 exported.append(target)
-        report['models'].append(dict(resource=entry['id'], name=entry['name'],selection='source_prefab_root',geometry=geometry,
+        report['models'].append(dict(resource=entry['id'], name=entry['name'],selection='source_prefab_root',geometry=geometry,asset_kind='model',
                                      fbxs=[p.relative_to(sample).as_posix() for p in exported]))
     report['files'] = [dict(file=p.relative_to(sample).as_posix(), bytes=p.stat().st_size, sha256=digest(p))
                        for p in sorted(output.rglob('*')) if p.is_file()]

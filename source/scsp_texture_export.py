@@ -7,10 +7,10 @@ import scsp_download as core
 from scsp_anim_export import digest
 
 
-def export_textures(sample):
+def export_textures(sample, entry_ids=None):
     sample=Path(sample)
     manifest=json.loads((sample/'manifest.json').read_text(encoding='utf-8'))
-    selected=set(manifest['selected_ids'])
+    selected=set(manifest['selected_ids'] if entry_ids is None else entry_ids)
     entries=[e for e in manifest['entries'] if e['id'] in selected and e['type']=='png']
     if not entries:return []
     outputs={o['file']:o for o in manifest['outputs']}

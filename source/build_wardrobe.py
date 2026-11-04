@@ -6,7 +6,7 @@ import struct
 from collections import defaultdict
 
 import scsp_download as core
-from appearance_resources import appearance_textures
+from appearance_resources import appearance_textures, attach_makeup_models
 from wardrobe_headwear import attach_headwear
 
 from runtime_paths import app_root
@@ -161,7 +161,7 @@ def build(index, texts, master):
                                     materials.append(dict(id=target['id'],name=target['name']))
                     if carriers:
                         textures=list(bound.values())
-                        matches=[]  # These face/eye carriers share the base head geometry.
+                        matches=[]  # Makeup prefab choices are restored below; shared geometry is not texture-only.
             records.append({**row, 'group': group, 'character': f'{character:02d}', 'models': matches,
                             'textures':textures,
                             'asset_kind':'model' if matches else 'texture' if textures else 'unresolved',
@@ -186,11 +186,11 @@ def build(index, texts, master):
                             'parts': [dict(group=g, id=i) for g, i in parts]})
     for row in records:
         row['icon_hash'] = icon_hashes.get(row['icon'], '')
-    return attach_headwear(dict(game_version=index['game_version'], resource_version=index['resource_version'],
+    return attach_makeup_models(attach_headwear(dict(game_version=index['game_version'], resource_version=index['resource_version'],
                 source='official MasterData wardrobe tables + localization + product icons',
                 schema=1, records=records, sets=result_sets,
                 counts=dict(dresses=len(dresses), hairs=len(hairs), accessories=len(accessories), sets=len(sets)),
-                note='No account ownership inferred. Missing model/thumbnail bindings remain visible.'), entries)
+                note='No account ownership inferred. Missing model/thumbnail bindings remain visible.'), entries), entries)
 
 
 if __name__ == '__main__':

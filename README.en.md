@@ -66,6 +66,10 @@ Runtime preparation copies only tools and metadata from the release. It does not
 
 ## Changelog
 
+### v0.1.4 · 2026-11-04
+
+- Fix facial makeup exports.
+
 ### v0.1.3 · 2026-10-29
 
 - Add combined body and root-motion exports.

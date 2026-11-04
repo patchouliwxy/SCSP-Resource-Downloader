@@ -6,6 +6,7 @@ from collections import Counter
 
 import scsp_download as core
 from wardrobe_headwear import attach_headwear
+from appearance_resources import attach_makeup_models
 
 CATEGORY_LABELS = {'headwear':'头饰','glasses':'眼镜','earring':'耳饰','makeup':'妆容','eye_l':'左眼 / 瞳孔','eye_r':'右眼 / 瞳孔','teeth':'牙饰','other':'其他饰品'}
 
@@ -17,7 +18,7 @@ class Wardrobe:
         if (self.data.get('game_version'), self.data.get('resource_version')) != (catalog.data['game_version'], catalog.data['resource_version']):
             self.data = {}
         if self.data:
-            self.data = attach_headwear(self.data, getattr(catalog, 'entries', []))
+            self.data = attach_makeup_models(attach_headwear(self.data, getattr(catalog, 'entries', [])), getattr(catalog, 'entries', []))
         self.records = self.data.get('records', [])
         self.by_key = {(r['group'], r['id']): r for r in self.records}
 
