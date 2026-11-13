@@ -66,6 +66,10 @@ Runtime preparation copies only tools and metadata from the release. It does not
 
 ## Changelog
 
+### v0.1.5 · 2026-11-13
+
+- Fix exports of head, hair and accessory models with null mesh references: associated geometry entries are downloaded automatically and null references are resolved by name at export.
+
 ### v0.1.4 · 2026-11-04
 
 - Fix facial makeup exports.

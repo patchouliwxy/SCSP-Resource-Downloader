@@ -148,6 +148,18 @@ class Catalog:
         if type(include_raw) is not bool: raise core.DownloadError("保留原始资源选项应为布尔值")
         if not selected:
             raise core.DownloadError("请先选择资源或歌曲")
+        # Null-PPtr geometry association: prefabs with m_Mesh {0,0} SkinnedMeshRenderer
+        # slots pull their geometry entries into the task. Sourced from the explicit
+        # verified table in null_mesh_geometry (no audit module required). Normal model
+        # prefabs are untouched. Extra entries are de-duplicated by entry id.
+        from null_mesh_geometry import load_null_mesh_prefabs, attach_null_mesh_geometry
+        null_prefabs = load_null_mesh_prefabs(entries=self.entries)
+        geometry_records = []
+        if null_prefabs:
+            extra_entries, geometry_records = attach_null_mesh_geometry(
+                self.entries, list(selected.values()), null_prefabs, by_id=self.by_id)
+            for e in extra_entries:
+                selected[e["id"]] = e
         planned, missing = core.resolve_dependencies(self.entries, with_audio_pairs(self.entries, list(selected.values())))
         if song:
             missing = sorted(set(missing + song["missing_companions"]))
@@ -156,6 +168,8 @@ class Catalog:
                       selected_ids=list(selected), total_bytes=sum(e["size"] for e in unique.values()),
                       unique_files=len(unique), dependency_complete=not missing,
                       unresolved_dependencies=missing, entries=planned)
+        if geometry_records:
+            result["null_mesh_geometry"] = geometry_records
         result['scene_export_requested'] = has_scene(result)
         scene_format = selection.get('scene_export_format','unity')
         if scene_format not in ('unity','fbx'):

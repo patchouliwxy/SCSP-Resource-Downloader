@@ -40,7 +40,7 @@ def export_models(sample, progress=lambda text: None):
         raise RuntimeError('缺少内置 AssetStudioMod CLI，无法导出 FBX')
     tool=STUDIO.with_name('SCSPModelFbx.exe')
     if not tool.is_file():raise RuntimeError('缺少精确 prefab 导出工具，请更新完整本地目录')
-    inputs=[];by_file={}
+    inputs=[];by_file={};id_by_file={}
     for item in manifest['outputs']:
         path = core.safe_output(sample, item['output'])
         if digest(path) != item['sha256']:
@@ -48,6 +48,20 @@ def export_models(sample, progress=lambda text: None):
         by_file[item['file']]=path
         with path.open('rb') as stream:
             if stream.read(8).startswith((b'UnityFS',b'UnityRaw',b'UnityWeb')):inputs.append(path)
+    # Map each catalogue entry id -> its decoded bundle output path (when it is a bundle).
+    for e in manifest['entries']:
+        p = by_file.get(e['file'])
+        if p in inputs:
+            id_by_file[e['id']] = p
+    # Per-prefab scoped geometry: prefab id -> set of input paths that were attached
+    # as this prefab's null-mesh geometry (from null_mesh_geometry records). The export
+    # layer prefers meshes from these bundles when resolving a null {0,0} reference.
+    scoped_paths = {}
+    for rec in manifest.get('null_mesh_geometry', []) or []:
+        pid = rec.get('prefab_id')
+        paths = [id_by_file[gid] for gid in rec.get('geometry_entry_ids', []) if gid in id_by_file]
+        if pid and paths:
+            scoped_paths[pid] = paths
     output = sample / 'models'
     if output.exists():
         raise ValueError('不覆盖已有 models 目录，请使用新的下载任务目录')
@@ -65,7 +79,8 @@ def export_models(sample, progress=lambda text: None):
         source=by_file.get(entry['file'])
         if source not in inputs:raise ValueError('所选 prefab 没有有效源资源包：'+entry['name'])
         request=work/f'{index:03d}-request.json'
-        core.write_json(request,dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder)))
+        scoped=[str(p) for p in scoped_paths.get(entry['id'], [])]
+        core.write_json(request,dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder),scoped_geometry_inputs=scoped))
         with (work / f'{index:03d}.log').open('wb') as log:
             result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
                                   timeout=900,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
