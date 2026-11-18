@@ -18,6 +18,30 @@ def is_model(entry):
     return entry['type'] == 'prefab' and entry['name'].rsplit('/',1)[-1].lower().startswith(('m_head_', 'm_hair_', 'm_dress_', 'm_acce_'))
 
 
+def accessory_carriers(entries, selected):
+    accessories = {}
+    for entry in selected:
+        match = re.fullmatch(r'm_acce_(\d+)_[a-z0-9]+_00_(\d+)\.prefab', Path(entry['name']).name, re.I)
+        if entry['type'] == 'prefab' and match:
+            accessories[entry['id']] = (entry, (match[2], match[1]))
+    if not accessories:
+        return {}
+    hair_by_code = {}
+    for entry in entries:
+        match = re.fullmatch(r'm_hair_(\d+)_\d+_(\d+)\.prefab', Path(entry['name']).name, re.I)
+        if entry['type'] == 'prefab' and match:
+            hair_by_code.setdefault((match[1], match[2]), []).append(entry)
+    result = {}
+    for identity, (accessory, code) in accessories.items():
+        materials = {name.casefold() for name in accessory['dependencies'] if name.lower().endswith('.mat')}
+        candidates = [hair for hair in hair_by_code.get(code, [])
+                      if hair['catalog'] == accessory['catalog']
+                      and materials.intersection(name.casefold() for name in hair['dependencies'])]
+        if len(candidates) == 1:
+            result[identity] = candidates[0]
+    return result
+
+
 def model_folder(name):
     stem = Path(name).stem
     label = stem[8:] if stem.lower().startswith('m_dress_') else stem[2:]
@@ -31,6 +55,7 @@ def export_models(sample, progress=lambda text: None):
     manifest = json.loads((sample / 'manifest.json').read_text(encoding='utf-8'))
     selected = set(manifest['selected_ids'])
     models = [e for e in manifest['entries'] if e['id'] in selected and is_model(e)]
+    carriers = accessory_carriers(manifest['entries'], models)
     report = dict(exporter='AssetStudioMod CLI 0.19.0.0', models=[], files=[],
                   unity_import_verified=False, model_playback_verified=False,
                   animation_mode='skip', scale_factor=1)
@@ -79,8 +104,16 @@ def export_models(sample, progress=lambda text: None):
         source=by_file.get(entry['file'])
         if source not in inputs:raise ValueError('所选 prefab 没有有效源资源包：'+entry['name'])
         request=work/f'{index:03d}-request.json'
-        scoped=[str(p) for p in scoped_paths.get(entry['id'], [])]
-        core.write_json(request,dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder),scoped_geometry_inputs=scoped))
+        config = dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder))
+        carrier = carriers.get(entry['id'])
+        if carrier:
+            carrier_source = by_file.get(carrier['file'])
+            if carrier_source not in inputs:
+                raise ValueError('头饰关联发型没有有效源资源包：' + carrier['name'])
+            config.update(carrier_input=str(carrier_source), carrier_name=Path(carrier['name']).stem,
+                          carrier_already_selected=carrier['id'] in selected)
+        config['scoped_geometry_inputs'] = [str(p) for p in scoped_paths.get(entry['id'], [])]
+        core.write_json(request, config)
         with (work / f'{index:03d}.log').open('wb') as log:
             result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
                                   timeout=900,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -90,6 +123,13 @@ def export_models(sample, progress=lambda text: None):
         geometry=json.loads((folder/'geometry-report.json').read_text(encoding='utf-8'))
         if geometry.get('selection')!='source_prefab_root' or geometry.get('animations')!=0:
             raise RuntimeError('精确 prefab 导出验证失败：'+entry['name'])
+        if geometry.get('carrier_reused'):
+            if not carrier or carrier['id'] not in selected or fbxs or not geometry.get('carrier_nodes'):
+                raise RuntimeError('头饰关联验证失败：'+entry['name'])
+            report['models'].append(dict(resource=entry['id'], name=entry['name'],
+                selection='source_prefab_root', geometry=geometry, asset_kind='model',
+                carrier_resource=carrier['id'], fbxs=[]))
+            continue
         if geometry.get('meshes')==0:
             carrier=re.fullmatch(r'm_acce_(\d+)_[a-z0-9]+_(?:all|make|paint|00|[lr]\d+)_(\d+)\.prefab',Path(entry['name']).name,re.I)
             if (not carrier or int(carrier[1])<80000 or fbxs or not geometry.get('geometry_checked')

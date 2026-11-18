@@ -53,6 +53,7 @@ Python 3.13 and Windows x64 are required. From the repository root:
 py -3.13 source/prepare_runtime.py --release release/SCSPDownloader
 cd source
 .\setup.ps1
+& .\.venv\Scripts\python.exe build_model_helper.py
 .\Start-Web.ps1
 
 # Run checks and build a release.
@@ -65,6 +66,8 @@ Runtime preparation copies only tools and metadata from the release. It does not
 `source/` includes the Python and Web code, the scene FBX helper's C# source, and the motion preview Worker's C# source and Unity project configuration. Third-party tools and the precompiled Worker are reused from the release. Rebuilding the Worker requires Unity and a compatible Humanoid preview model; use `build_motion_worker.py --unity <Unity.exe>`. Models and textures are not included in the Git source tree.
 
 ## Changelog
+
+- Fix null mesh references in some clothing and accessory exports.
 
 ### v0.1.5 · 2026-11-13
 

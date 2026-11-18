@@ -59,6 +59,7 @@ cd source
 py -3.13 source/prepare_runtime.py --release release/SCSPDownloader
 cd source
 .\setup.ps1
+& .\.venv\Scripts\python.exe build_model_helper.py
 .\Start-Web.ps1
 
 # 检查与重新打包
@@ -71,6 +72,8 @@ cd source
 Python/Web 源码、场景 FBX 辅助程序的 C# 源码、动作预览 Worker 的 C# 和 Unity 工程配置均在 `source/`。第三方工具及预编译 Worker 从发行版复用；自行重建 Worker 需要 Unity 和适配的 Humanoid 预览模型，使用 `build_motion_worker.py --unity <Unity.exe>`。模型与贴图不包含在 Git 源码中。
 
 ## 更新日志
+
+- 修复部分服装和饰品的空网格引用。
 
 ### v0.1.5 · 2026-11-13
 

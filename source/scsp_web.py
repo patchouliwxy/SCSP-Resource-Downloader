@@ -25,7 +25,7 @@ from scsp_anim_export import export_animations
 from scsp_scene_export import export_scenes, has_scene
 from scsp_scene_fbx import export_scene_fbx
 from scsp_scene_names import scene_names
-from scsp_model_export import export_models, is_model
+from scsp_model_export import accessory_carriers, export_models, is_model
 from scsp_texture_export import export_textures
 from scsp_audio_export import export_audio
 from scsp_audio_index import AudioIndex
@@ -154,13 +154,16 @@ class Catalog:
         # prefabs are untouched. Extra entries are de-duplicated by entry id.
         from null_mesh_geometry import load_null_mesh_prefabs, attach_null_mesh_geometry
         null_prefabs = load_null_mesh_prefabs(entries=self.entries)
+        carriers = accessory_carriers(self.entries, selected.values())
+        roots = {**selected, **{e['id']: e for e in carriers.values()}}
         geometry_records = []
         if null_prefabs:
             extra_entries, geometry_records = attach_null_mesh_geometry(
-                self.entries, list(selected.values()), null_prefabs, by_id=self.by_id)
+                self.entries, [e for e in selected.values() if e["id"] not in carriers],
+                null_prefabs, by_id=self.by_id)
             for e in extra_entries:
-                selected[e["id"]] = e
-        planned, missing = core.resolve_dependencies(self.entries, with_audio_pairs(self.entries, list(selected.values())))
+                roots[e["id"]] = e
+        planned, missing = core.resolve_dependencies(self.entries, with_audio_pairs(self.entries, list(roots.values())))
         if song:
             missing = sorted(set(missing + song["missing_companions"]))
         unique = {e["file"]: e for e in planned}

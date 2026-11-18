@@ -7,12 +7,15 @@ import subprocess
 import sys
 import zipfile
 
+from build_model_helper import build_model_helper
+
 root = Path(__file__).resolve().parent
 release = root.parent / 'release'
 build = root / 'build'
 app = release / 'SCSPDownloader'
 if app.exists():
     raise SystemExit('Release directory already exists. Move it aside before building; user data will not be overwritten.')
+build_model_helper()
 subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--console',
     '--name', 'SCSPDownloader', '--distpath', str(build / 'distribution'), '--workpath', str(build),
     '--specpath', str(root), '--collect-all', 'archspec', '--collect-all', 'fmod_toolkit',

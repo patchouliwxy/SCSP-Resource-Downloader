@@ -14,6 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 import scsp_download as core
 
 
+def read_preview_mesh(pointer, name, warnings):
+    # PathID zero is an explicitly unassigned mesh, not a missing dependency.
+    if pointer.m_PathID == 0:
+        warnings.append('跳过未分配 Mesh 的节点：' + name)
+        return None
+    return pointer.deref().read()  # Nonzero unresolved references must still fail.
+
+
 def build_glb(paths, output):
     import numpy as np
     import UnityPy
@@ -124,9 +132,11 @@ def build_glb(paths, output):
             filters = [p.component.deref().read() for p in go.m_Component if p.component.deref().type.name == 'MeshFilter']
             if not filters:
                 continue
-            mesh = filters[0].m_Mesh.deref().read()
+            mesh = read_preview_mesh(filters[0].m_Mesh, go.m_Name, warnings)
         else:
-            mesh = renderer.m_Mesh.deref().read()
+            mesh = read_preview_mesh(renderer.m_Mesh, go.m_Name, warnings)
+        if mesh is None:
+            continue
         handler = MeshHandler(mesh)
         handler.process()
         vertices = np.array(handler.m_Vertices, dtype='<f4')[:, :3].copy()

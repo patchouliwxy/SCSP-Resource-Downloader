@@ -7,7 +7,8 @@ import zipfile
 METADATA = {'official-current-index.json', 'song-names.json', 'character-data.json', 'wardrobe-data.json'}
 
 def allowed(parts):
-    return bool(parts) and (parts[0] == 'tools' or len(parts) == 1 and parts[0] in METADATA)
+    return bool(parts) and (parts[0] == 'tools' and Path(parts[-1]).suffix.lower() != '.cs'
+                            or len(parts) == 1 and parts[0] in METADATA)
 
 def prepare(release, target):
     release, target = Path(release).resolve(), Path(target).resolve()
