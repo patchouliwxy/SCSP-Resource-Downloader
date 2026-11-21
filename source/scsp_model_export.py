@@ -93,18 +93,13 @@ def export_models(sample, progress=lambda text: None):
     output.mkdir()
     work = sample / 'model-export-work'
     work.mkdir(exist_ok=True)
+    requests = []
     for index, entry in enumerate(models, 1):
         name = Path(entry['name']).stem
-        # Output identities are controlled, not resource names interpreted as paths.
-        folder = work / f'{index:03d}'
-        target_folder = output / model_folder(entry['name'])
-        if target_folder.exists():
-            raise ValueError('模型编号重复：' + entry['name'])
-        progress('正在导出 FBX 和贴图：' + entry['name'])
+        model_folder(entry['name'])
         source=by_file.get(entry['file'])
         if source not in inputs:raise ValueError('所选 prefab 没有有效源资源包：'+entry['name'])
-        request=work/f'{index:03d}-request.json'
-        config = dict(inputs=[str(p) for p in inputs],prefab_input=str(source),name=name,output=str(folder))
+        config = dict(prefab_input=str(source),name=name,output=str(work / f'{index:03d}'))
         carrier = carriers.get(entry['id'])
         if carrier:
             carrier_source = by_file.get(carrier['file'])
@@ -113,13 +108,32 @@ def export_models(sample, progress=lambda text: None):
             config.update(carrier_input=str(carrier_source), carrier_name=Path(carrier['name']).stem,
                           carrier_already_selected=carrier['id'] in selected)
         config['scoped_geometry_inputs'] = [str(p) for p in scoped_paths.get(entry['id'], [])]
-        core.write_json(request, config)
-        with (work / f'{index:03d}.log').open('wb') as log:
-            result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
-                                  timeout=900,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        requests.append(config)
+    input_paths = [str(path) for path in inputs]
+    if len(requests) == 1:
+        request = work / '001-request.json'
+        log_path = work / '001.log'
+        core.write_json(request, dict(requests[0], inputs=input_paths))
+        progress('正在导出 FBX 和贴图：' + models[0]['name'])
+    else:
+        request = work / 'batch-request.json'
+        log_path = work / 'batch.log'
+        core.write_json(request, dict(inputs=input_paths, requests=requests))
+        progress(f'正在批量导出 {len(requests)} 个模型的 FBX 和贴图')
+    with log_path.open('wb') as log:
+        result=subprocess.run([str(tool),str(request)],cwd=tool.parent,stdout=log,stderr=subprocess.STDOUT,
+                              timeout=900 * len(requests),creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    if result.returncode:
+        raise RuntimeError(f'FBX 导出失败，详见 model-export-work/{log_path.name}')
+    for entry, config in zip(models, requests):
+        folder = Path(config['output'])
+        target_folder = output / model_folder(entry['name'])
+        if target_folder.exists():
+            raise ValueError('模型编号重复：' + entry['name'])
+        carrier = carriers.get(entry['id'])
         fbxs = sorted(folder.rglob('*.fbx'))
-        if result.returncode or len(fbxs)>1 or not (folder/'geometry-report.json').is_file():
-            raise RuntimeError(f'{entry["name"]} FBX 导出失败，详见 model-export-work/{index:03d}.log')
+        if len(fbxs)>1 or not (folder/'geometry-report.json').is_file():
+            raise RuntimeError(f'{entry["name"]} FBX 导出失败，详见 model-export-work/{log_path.name}')
         geometry=json.loads((folder/'geometry-report.json').read_text(encoding='utf-8'))
         if geometry.get('selection')!='source_prefab_root' or geometry.get('animations')!=0:
             raise RuntimeError('精确 prefab 导出验证失败：'+entry['name'])

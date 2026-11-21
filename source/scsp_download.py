@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 import re
 import struct
 import sys
+import tempfile
 import time
 import threading
 import urllib.error
@@ -172,13 +173,16 @@ _transfer_local = threading.local()
 
 
 @contextmanager
-def transfer_observer(callback):
+def transfer_observer(callback, before_request=None):
     previous = getattr(_transfer_local, 'callback', None)
+    previous_gate = getattr(_transfer_local, 'before_request', None)
     _transfer_local.callback = callback
+    _transfer_local.before_request = before_request
     try:
         yield
     finally:
         _transfer_local.callback = previous
+        _transfer_local.before_request = previous_gate
 
 
 def transfer_event(kind, **details):
@@ -201,6 +205,9 @@ def get_file(info, cache):
     attempts = 5
     for attempt in range(attempts):
         retry_after = 0
+        gate = getattr(_transfer_local, 'before_request', None)
+        if gate:
+            gate()
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
                 data = response.read(info["size"] + 1)
@@ -217,17 +224,25 @@ def get_file(info, cache):
             cause = error
         except (OSError, http.client.HTTPException) as error:
             cause = error
+        delay = max(retry_after, min(8, .5 * 2 ** attempt))
+        if getattr(cause, 'code', None) == 429:
+            transfer_event('throttled', delay=delay)
         if attempt == attempts - 1:
             raise DownloadError(f"下载 {info.get('name', filename)} 失败（已尝试 {attempts} 次）：{cause}") from cause
-        delay = max(retry_after, min(8, .5 * 2 ** attempt))
         transfer_event('retry', attempt=attempt+1, max_attempts=attempts, delay=delay, error=str(cause))
         time.sleep(delay)
     if info.get("sha256") and hashlib.sha256(data).hexdigest() != info["sha256"]:
         raise DownloadError(f"SHA-256 mismatch for {filename}")
     cache.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".part")
-    temporary.write_bytes(data)
-    temporary.replace(path)
+    with tempfile.NamedTemporaryFile(dir=cache, prefix=filename + '.', suffix='.part', delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(data)
+            stream.close()
+            temporary.replace(path)
+        finally:
+            stream.close()
+            temporary.unlink(missing_ok=True)
     transfer_event('downloaded', bytes=len(data))
     return data
 

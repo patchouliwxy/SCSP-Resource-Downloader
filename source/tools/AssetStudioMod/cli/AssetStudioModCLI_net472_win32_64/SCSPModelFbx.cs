@@ -14,6 +14,7 @@ public class PrefabFbx {
   public bool carrier_already_selected;
   public string[] scoped_geometry_inputs;
  }
+ public class BatchRequest { public string[] inputs; public Request[] requests; }
  // Mesh by name, remembering the owning SerializedFile so we can scope candidates
  // to the geometry bundles explicitly attached to this prefab.
  public class MeshHit { public Mesh mesh; public SerializedFile file; }
@@ -56,7 +57,8 @@ public class PrefabFbx {
   return ptr;
  }
  static void Inspect(GameObject go, HashSet<long> seen, List<string> unresolved, List<string> empty, ref int renderers, Dictionary<string,List<MeshHit>> meshIndex,
-                     HashSet<string> scopedFiles, List<string> rebound) {
+                     HashSet<string> scopedFiles, List<string> rebound,
+                     Dictionary<SkinnedMeshRenderer, PPtr<Mesh>> originalPointers) {
   if(!seen.Add(go.m_PathID))return;
   Mesh mesh;
   if(go.m_SkinnedMeshRenderer!=null){
@@ -72,6 +74,7 @@ public class PrefabFbx {
      if(candidates.Count!=1)unresolved.Add(go.m_Name);
      else{
       var hit=candidates[0];
+      originalPointers.Add(go.m_SkinnedMeshRenderer,ptr);
       go.m_SkinnedMeshRenderer.m_Mesh=MakePtr(ptr,hit.mesh);
       rebound.Add(go.m_Name+":"+hit.mesh.m_Name+"@"+Path.GetFileName(hit.file.originalPath));
      }
@@ -85,7 +88,7 @@ public class PrefabFbx {
   if(go.m_Transform==null)return;
   foreach(var p in go.m_Transform.m_Children){Transform child;GameObject obj;
    if(!p.TryGet(out child)||!child.m_GameObject.TryGet(out obj))throw new Exception("Unresolved prefab child transform");
-   Inspect(obj,seen,unresolved,empty,ref renderers,meshIndex,scopedFiles,rebound);
+   Inspect(obj,seen,unresolved,empty,ref renderers,meshIndex,scopedFiles,rebound,originalPointers);
   }
  }
  static GameObject FindRoot(AssetsManager manager, string source, string name) {
@@ -157,9 +160,9 @@ public class PrefabFbx {
   return converter;
  }
 
- public static int Main(string[] args){try{
-  var request=JsonConvert.DeserializeObject<Request>(File.ReadAllText(args[0]));
-  var manager=new AssetsManager();manager.OptionLoaders.Clear();manager.LoadFilesAndFolders(request.inputs);
+ static void ExportOne(AssetsManager manager, Request request,
+  Lazy<Dictionary<string,List<MeshHit>>> meshIndex,
+  Dictionary<SkinnedMeshRenderer,PPtr<Mesh>> originalPointers) {
   var source=Path.GetFullPath(request.prefab_input);
   var root=FindRoot(manager,source,request.name);
   int renderers=0;var unresolved=new List<string>();var empty=new List<string>();
@@ -172,7 +175,7 @@ public class PrefabFbx {
     ||request.name.StartsWith("m_hair_",StringComparison.OrdinalIgnoreCase));
   var rebound=new List<string>();
   Inspect(root,new HashSet<long>(),unresolved,empty,ref renderers,
-   canRebind?BuildMeshIndex(manager):null,scopedFiles,rebound);
+   canRebind?meshIndex.Value:null,scopedFiles,rebound,originalPointers);
   if(unresolved.Count>0)throw new Exception("Unresolved mesh references: "+String.Join(", ",unresolved));
   var carrierNodes=new List<string>();
   bool carrierReused=false;
@@ -195,6 +198,32 @@ public class PrefabFbx {
    carrier_nodes=carrierNodes,carrier_reused=carrierReused,
    null_mesh_rebound=rebound,scoped_geometry_files=scopedFiles.Count
   },Formatting.Indented));
-  manager.Clear();Console.WriteLine("SCSP_PREFAB_FBX_OK");return 0;
- }catch(Exception error){Console.Error.WriteLine(error);return 1;}}
+ }
+
+ public static int Main(string[] args) {
+  var manager=new AssetsManager();
+  try {
+   var json=File.ReadAllText(args[0]);
+   var batch=JsonConvert.DeserializeObject<BatchRequest>(json);
+   var requests=batch.requests??new[]{JsonConvert.DeserializeObject<Request>(json)};
+   if(batch.inputs==null||batch.inputs.Length==0||requests.Length==0)
+    throw new Exception("Missing prefab export inputs");
+   manager.OptionLoaders.Clear();
+   manager.LoadFilesAndFolders(batch.inputs);
+   var meshIndex=new Lazy<Dictionary<string,List<MeshHit>>>(()=>BuildMeshIndex(manager));
+   foreach(var request in requests) {
+    var originalPointers=new Dictionary<SkinnedMeshRenderer,PPtr<Mesh>>();
+    Console.WriteLine("Exporting prefab: "+request.name);
+    try { ExportOne(manager,request,meshIndex,originalPointers); }
+    finally {
+     foreach(var item in originalPointers)item.Key.m_Mesh=item.Value;
+    }
+   }
+   Console.WriteLine("SCSP_PREFAB_FBX_OK");
+   return 0;
+  } catch(Exception error) {
+   Console.Error.WriteLine(error);
+   return 1;
+  } finally { manager.Clear(); }
+ }
 }

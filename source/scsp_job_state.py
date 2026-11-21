@@ -155,11 +155,15 @@ class JobRecovery:
         self.update(job,phase='packaging',phase_label='打包 ZIP',phase_completed=0,
                     phase_total=len(unique),packaged_bytes=0,package_total_bytes=total)
         done=0
+        last_update=time.monotonic()
         temporary=self.output/(job['id']+'.zip.part')
         with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
             for n,(name,p) in enumerate(unique.items(),1):
                 archive.write(p,name);done+=p.stat().st_size
-                self.update(job,phase_completed=n,packaged_bytes=done,current=name)
+                now=time.monotonic()
+                if now-last_update>=.25:
+                    self.update(job,phase_completed=n,packaged_bytes=done,current=name)
+                    last_update=now
         final=self.output/(job['id']+'.zip')
         if final.exists():
             self.storage_bytes(job['id'])
@@ -167,3 +171,4 @@ class JobRecovery:
             history.mkdir(parents=True)
             final.rename(history/'previous.zip')
         temporary.replace(final)
+        self.update(job,phase_completed=len(unique),packaged_bytes=done,current="")

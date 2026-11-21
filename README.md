@@ -25,7 +25,7 @@
 
 ## 使用
 
-Windows x64：从本仓库 **Releases** 下载 `SCSPDownloader-win64.zip`，解压后运行 `SCSPDownloader.exe`，浏览器打开 `http://127.0.0.1:8765/`。保留完整目录，无需安装 Python。关闭终端即可停止服务。
+Windows x64：从本仓库 **Releases** 下载 `SCSPDownloader-win64.zip`，解压后运行 `SCSPDownloader.exe`。默认使用本机端口 8765；端口不可用时自动选择可用端口，并在浏览器打开实际地址。重复启动同一目录会打开已有服务。保留完整目录，无需安装 Python。关闭终端即可停止服务。
 
 下载与缓存默认位于程序旁的 `web-downloads` 和 `.scsp-cache`，不依赖开发者电脑路径。下载文件实际保存在本机；“保存 ZIP”用于另存一份。模型 FBX 导出工具需要 .NET Framework 4.7.2 或兼容版本。
 
@@ -72,6 +72,14 @@ cd source
 Python/Web 源码、场景 FBX 辅助程序的 C# 源码、动作预览 Worker 的 C# 和 Unity 工程配置均在 `source/`。第三方工具及预编译 Worker 从发行版复用；自行重建 Worker 需要 Unity 和适配的 Humanoid 预览模型，使用 `build_motion_worker.py --unity <Unity.exe>`。模型与贴图不包含在 Git 源码中。
 
 ## 更新日志
+
+### v0.1.7 · 2026-11-21
+
+- 增加同一任务内的资源包并行下载，保留断点续传，遇到限流时自动降为串行。
+- 优化 AssetStudio 加载逻辑：同一任务批量导出多个模型时，共用一次资源加载，减少重复读取依赖包。
+- 修复默认端口被 Windows 保留或被其他程序占用时，双击 EXE 无法启动的问题。
+
+### v0.1.6 · 2026-11-18
 
 - 修复部分服装和饰品的空网格引用。
 

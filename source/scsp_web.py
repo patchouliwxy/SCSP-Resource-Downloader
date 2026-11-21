@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import socket
+import sys
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -21,6 +25,7 @@ import zipfile
 import scsp_download as core
 from audio_companions import with_audio_pairs
 from song_delivery import select_companions, mouth_candidates
+from scsp_task_transfer import fetch_task
 from scsp_anim_export import export_animations
 from scsp_scene_export import export_scenes, has_scene
 from scsp_scene_fbx import export_scene_fbx
@@ -341,23 +346,13 @@ class Downloads(JobRecovery):
             self.update(job,status='running',phase='downloading',phase_label='下载资源',
                 completed_files=len(valid),completed_bytes=sum(e['size'] for e in {e['file']:e for e in plan['entries']}.values() if e['file'] in valid),
                 cached_files=0,cached_bytes=0,reused_files=len(valid),network_bytes=0,downloaded_files=0,retry_count=0,reused_stages=0,speed_bps=0)
-            started=time.monotonic()
-            def transfer(kind,details):
-                if kind=='cache':self.update(job,cached_files=job['cached_files']+1,cached_bytes=job['cached_bytes']+details['bytes'])
-                elif kind=='received':
-                    count=job['network_bytes']+details['bytes']
-                    self.update(job,network_bytes=count,speed_bps=count/max(.001,time.monotonic()-started))
-                elif kind=='downloaded':self.update(job,downloaded_files=job['downloaded_files']+1)
-                elif kind=='retry':self.update(job,retry_count=job['retry_count']+1,current=f"重试 {details['attempt']}/{details['max_attempts']} · 等待 {details['delay']} 秒 · {job.get('resource_name','')}")
-            for entry in {e["file"]: e for e in plan["entries"]}.values():
+            entries = {e["file"]: e for e in plan["entries"]}
+            def canceled():
                 with self.lock:
-                    if job["status"] == "canceling":
-                        self.update(job, status="canceled", current="")
-                        return
-                if entry['file'] in valid:continue
-                self.update(job,current=entry['name'],resource_name=entry['name'])
-                with core.transfer_observer(transfer):
-                    decoded=core.decode_asset(entry,core.get_file(entry,self.cache))
+                    return job["status"] == "canceling"
+
+            def accept(entry, data):
+                decoded = core.decode_asset(entry, data)
                 relative = (f"bundles/{entry['file']}.unity3d" if entry["resource_type"] in (0, 1) else f"raw/{entry['id']}")
                 path = core.safe_output(output, relative)
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,9 +360,13 @@ class Downloads(JobRecovery):
                 temp = path.with_suffix(path.suffix + ".part")
                 temp.write_bytes(decoded)
                 temp.replace(path)
-                plan["outputs"].append(dict(file=entry["file"], output=relative, sha256=hashlib.sha256(decoded).hexdigest()))
+                valid[entry["file"]] = dict(file=entry["file"], output=relative, sha256=hashlib.sha256(decoded).hexdigest())
+                plan["outputs"] = [valid[key] for key in entries if key in valid]
                 core.write_json(output / "manifest.json", plan)
                 self.update(job, completed_files=len(plan["outputs"]), completed_bytes=job["completed_bytes"] + entry["size"])
+            pending = [entry for key, entry in entries.items() if key not in valid]
+            if pending:
+                fetch_task(pending, self.cache, canceled, lambda **fields: self.update(job, **fields), accept)
             with self.lock:
                 if job["status"] == "canceling":
                     self.update(job, status="canceled", current="")
@@ -679,12 +678,86 @@ def make_handler(catalog, downloads, index_path=None, previews=None, listens=Non
     return Handler
 
 
-def main():
+class LocalHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = os.name != 'nt'
+
+    def server_bind(self):
+        if os.name == 'nt':
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def bind_local_server(port, handler):
+    if port is not None:
+        return LocalHTTPServer(('127.0.0.1', port), handler)
+    try:
+        return LocalHTTPServer(('127.0.0.1', 8765), handler)
+    except OSError as error:
+        if (error.errno not in (errno.EACCES, errno.EADDRINUSE)
+                and getattr(error, 'winerror', None) not in (10013, 10048)):
+            raise
+    server = LocalHTTPServer(('127.0.0.1', 0), handler)
+    print(f'默认端口 8765 不可用，改用 {server.server_port}。', flush=True)
+    return server
+
+
+@contextmanager
+def web_instance(path):
+    with path.open('a+b', buffering=0) as lock:
+        if os.name == 'nt':
+            import msvcrt
+            lock.seek(0)
+            acquire = lambda: msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            acquire = lambda: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            acquire()
+        except OSError as error:
+            if error.errno not in (errno.EACCES, errno.EAGAIN):
+                raise
+            lock.seek(1)
+            port = lock.read(6).strip()
+            yield None, int(port) if port.isdigit() and 0 < int(port) <= 65535 else None
+            return
+        lock.seek(0)
+        lock.truncate(0)
+        lock.write(b'\n')
+        try:
+            yield lock, None
+        finally:
+            lock.truncate(1)
+
+
+def show_web_url(port, on_ready):
+    url = f'http://127.0.0.1:{port}/'
+    if on_ready:
+        threading.Thread(target=on_ready, args=(url,), daemon=True).start()
+    return url
+
+
+def main(on_ready=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=Path, default=(ROOT / "official-current-index.json" if (ROOT / "official-current-index.json").is_file() else ROOT / "latest-index.json"))
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, help="固定端口；不指定时优先使用 8765，不可用则自动选择")
     parser.add_argument("--out", type=Path, default=ROOT / "web-downloads")
     args = parser.parse_args()
+    if args.port is not None and not 0 <= args.port <= 65535:
+        parser.error('--port 必须在 0 到 65535 之间')
+    with web_instance(ROOT / '.web-instance.lock') as (lock, existing_port):
+        if lock is None:
+            if existing_port is None:
+                print('下载器正在启动，请稍候。', flush=True)
+            else:
+                url = f'http://127.0.0.1:{existing_port}/'
+                print(f'下载器已运行：{url}', flush=True)
+                if on_ready:
+                    on_ready(url)
+            return 0
+        return serve_web(args, lock, on_ready)
+
+
+def serve_web(args, lock, on_ready):
     print("正在加载本地资源索引…", flush=True)
     catalog = Catalog(json.loads(args.index.read_text(encoding="utf-8")))
     downloads = Downloads(catalog, args.out, ROOT / ".scsp-cache")
@@ -693,19 +766,31 @@ def main():
     motions = MotionPreviews(catalog, ROOT / 'motion-previews', ROOT / '.scsp-cache')
     images = ImagePreviews(catalog, ROOT / 'image-previews', ROOT / '.scsp-cache')
     audio_index = AudioIndex(catalog, ROOT / 'audio-index', ROOT / '.scsp-cache')
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(catalog, downloads, args.index, previews, listens, motions, audio_index, images))
-    audio_index.start()
-    previews.cleanup_stale()
-    listens.cleanup_stale()
-    motions.cleanup_stale()
-    images.cleanup_stale()
-    print(f"SCSP Web 已启动：http://127.0.0.1:{server.server_port}（{len(catalog.entries):,} 个已命名资源）", flush=True)
+    server = None
     try:
+        handler = make_handler(catalog, downloads, args.index, previews, listens, motions, audio_index, images)
+        try:
+            server = bind_local_server(args.port, handler)
+        except OSError as error:
+            if args.port is None:
+                print(f'无法启动本地服务：{error}', file=sys.stderr)
+            else:
+                print(f'无法监听指定端口 {args.port}：{error}。请换一个端口或省略 --port。', file=sys.stderr)
+            return 1
+        audio_index.start()
+        previews.cleanup_stale()
+        listens.cleanup_stale()
+        motions.cleanup_stale()
+        images.cleanup_stale()
+        lock.write(f'{server.server_port}\n'.encode('ascii'))
+        url = show_web_url(server.server_port, on_ready)
+        print(f"SCSP Web 已启动：{url}（{len(catalog.entries):,} 个已命名资源）", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        if server:
+            server.server_close()
         if downloads.catalog.audio_indexer: downloads.catalog.audio_indexer.close()
         downloads.pool.shutdown(wait=True, cancel_futures=True)
         previews.pool.shutdown(wait=True, cancel_futures=True)
@@ -715,4 +800,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

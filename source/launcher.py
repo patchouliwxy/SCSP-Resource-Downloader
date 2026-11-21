@@ -1,4 +1,4 @@
-import sys,threading,time,webbrowser,json
+import sys,webbrowser,json
 from runtime_paths import app_root
 def main():
     command=sys.argv[1] if len(sys.argv)>1 else ''
@@ -17,18 +17,11 @@ def main():
         sys.argv.pop(1)
         import scsp_download
         return scsp_download.main()
-    if '--no-browser' in sys.argv:sys.argv.remove('--no-browser')
-    else:
-        port=sys.argv[sys.argv.index('--port')+1] if '--port' in sys.argv else '8765'
-        def open_browser():
-            import urllib.request
-            for _ in range(90):
-                try:
-                    urllib.request.urlopen('http://127.0.0.1:'+port+'/api/meta',timeout=1).close();webbrowser.open('http://127.0.0.1:'+port+'/');return
-                except OSError:time.sleep(1)
-        threading.Thread(target=open_browser,daemon=True).start()
+    open_browser = '--no-browser' not in sys.argv
+    if not open_browser:
+        sys.argv.remove('--no-browser')
     import scsp_web
-    scsp_web.main()
+    return scsp_web.main(on_ready=webbrowser.open if open_browser else None)
 if __name__=='__main__':
     try:raise SystemExit(main())
     except Exception as e:

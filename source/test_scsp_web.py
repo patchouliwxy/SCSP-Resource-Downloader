@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import http.client
 import json
@@ -9,7 +10,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import scsp_web as web
 import scsp_download as core
 from test_scsp_download import entry
@@ -24,6 +25,56 @@ def resource(name, deps=(), kind=None):
 
 def catalog(entries):
     return web.Catalog({"schema": 1, "game_version": "test", "resource_version": "test", "entries": entries})
+
+
+class WebStartupTests(unittest.TestCase):
+    def test_default_port_falls_back_when_reserved_or_occupied(self):
+        for failure in (PermissionError(errno.EACCES, 'reserved'), OSError(errno.EADDRINUSE, 'occupied')):
+            with self.subTest(failure=failure):
+                with web.LocalHTTPServer(('127.0.0.1', 0), BaseHTTPRequestHandler) as fallback:
+                    with patch.object(web, 'LocalHTTPServer', side_effect=[failure, fallback]) as server:
+                        self.assertIs(web.bind_local_server(None, BaseHTTPRequestHandler), fallback)
+                    self.assertEqual([call.args[0] for call in server.call_args_list],
+                                     [('127.0.0.1', 8765), ('127.0.0.1', 0)])
+
+    def test_fixed_port_and_unexpected_error_do_not_fall_back(self):
+        for port, failure in ((8875, OSError(errno.EADDRINUSE, 'occupied')),
+                              (None, OSError(errno.ENETDOWN, 'network down'))):
+            with self.subTest(port=port, failure=failure):
+                with patch.object(web, 'LocalHTTPServer', side_effect=failure) as server:
+                    with self.assertRaises(OSError) as raised:
+                        web.bind_local_server(port, BaseHTTPRequestHandler)
+                self.assertIs(raised.exception, failure)
+                server.assert_called_once()
+
+    def test_url_uses_bound_port(self):
+        ready = threading.Event()
+        urls = []
+
+        def browser(url):
+            urls.append(url)
+            ready.set()
+
+        with web.bind_local_server(0, BaseHTTPRequestHandler) as server:
+            expected = f'http://127.0.0.1:{server.server_port}/'
+            self.assertEqual(web.show_web_url(server.server_port, browser), expected)
+            self.assertTrue(ready.wait(2))
+        self.assertEqual(urls, [expected])
+
+    def test_instance_lock_reuses_port_and_releases_on_exit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / '.web-instance.lock'
+            with web.web_instance(path) as (lock, port):
+                self.assertIsNotNone(lock)
+                self.assertIsNone(port)
+                with web.web_instance(path) as starting:
+                    self.assertEqual(starting, (None, None))
+                lock.write(b'8875\n')
+                with web.web_instance(path) as running:
+                    self.assertEqual(running, (None, 8875))
+            with web.web_instance(path) as (lock, port):
+                self.assertIsNotNone(lock)
+                self.assertIsNone(port)
 
 
 class CatalogTests(unittest.TestCase):

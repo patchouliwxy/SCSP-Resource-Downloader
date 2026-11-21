@@ -25,7 +25,7 @@ Exports do not reconstruct the complete game. Original shaders, scripts, physics
 
 ## Getting Started
 
-On Windows x64, download `SCSPDownloader-win64.zip` from this repository's **Releases**, extract it, and run `SCSPDownloader.exe`. Open `http://127.0.0.1:8765/` in your browser. Keep the entire extracted folder together. Python is not required. Close the terminal to stop the server.
+On Windows x64, download `SCSPDownloader-win64.zip` from this repository's **Releases**, extract it, and run `SCSPDownloader.exe`. The app opens its local address in your browser and selects a free port if 8765 is unavailable. Launching it again from the same folder opens the existing server. Keep the entire extracted folder together. Python is not required. Close the terminal to stop the server.
 
 Downloads and cache files are stored beside the application in `web-downloads` and `.scsp-cache` by default. Paths are not tied to the developer's computer. Files are saved locally; **Save ZIP** saves an additional copy. The model FBX exporter requires .NET Framework 4.7.2 or a compatible version.
 
@@ -66,6 +66,14 @@ Runtime preparation copies only tools and metadata from the release. It does not
 `source/` includes the Python and Web code, the scene FBX helper's C# source, and the motion preview Worker's C# source and Unity project configuration. Third-party tools and the precompiled Worker are reused from the release. Rebuilding the Worker requires Unity and a compatible Humanoid preview model; use `build_motion_worker.py --unity <Unity.exe>`. Models and textures are not included in the Git source tree.
 
 ## Changelog
+
+### v0.1.7 · 2026-11-21
+
+- Download resource bundles concurrently within a task, with resume support and a fallback to serial downloads when rate-limited.
+- Reuse one AssetStudio resource load across the models in a batch export instead of repeatedly loading the same dependencies.
+- Fix EXE startup when the default port is reserved by Windows or already in use.
+
+### v0.1.6 · 2026-11-18
 
 - Fix null mesh references in some clothing and accessory exports.
 
